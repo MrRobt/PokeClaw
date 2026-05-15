@@ -1026,9 +1026,30 @@ Layer 1 broadcast bypasses UI routing. Only Layer 3 catches routing bugs.
 
 ---
 
+## Z. 端云设备节点验收
+
+这些用例用于 PokeClaw 作为 dyq 云端执行节点时的端到端验收。所有实现必须继续经过现有 `TaskOrchestrator`，不能绕过本机权限、前台服务、可访问性、通知权限和安全规则。
+
+- [ ] **Z1. 首次配对注册**：清空云节点配置 → 打开设置页“云端设备节点” → 输入 dyq 云端地址和配对令牌 → 点击启用 → 期望端侧发起注册请求，云端收到设备标识、应用版本、构建指纹、系统版本、能力列表；本机界面显示已连接节点编号；日志含注册成功但不打印令牌。建议命令：`adb logcat -c` → 通过 UI 启用 → `adb logcat -d | grep -E "CloudNode|register|device node"`。
+- [ ] **Z2. 鉴权失败用户可见**：配置错误令牌 → 启用云节点 → 期望注册失败，设置页显示“配对失败/请重新配对”，本地停止重试；日志记录 `CLOUD_AUTH_REJECTED`，不打印令牌。建议命令：`adb logcat -d | grep -E "CLOUD_AUTH_REJECTED|CloudNode"`。
+- [ ] **Z3. 心跳能力快照**：启用云节点且模拟服务返回成功 → 等待两个心跳周期 → 期望云端收到电量、网络、前台服务、可访问性、通知监听、当前任务状态；关闭可访问性后下一次心跳反映 `accessibilityReady=false`。建议命令：`adb shell settings get secure enabled_accessibility_services`、`adb logcat -d | grep -E "heartbeat|capability"`。
+- [ ] **Z4. 云端任务下发到本地执行**：模拟 dyq 返回任务“how much battery left” → 端侧拉取任务 → 期望任务进入 PokeClaw 正常聊天/任务壳，调用确定性电量工具，云端收到 `accepted`、`running`、`completed`，结果摘要包含真实电量。建议命令：`adb logcat -d | grep -E "TaskOrchestrator|CloudTask|onComplete|get_device_info"`。
+- [ ] **Z5. 离线结果缓存与恢复补报**：任务执行中关闭网络或让模拟服务返回不可达 → 端侧继续完成本地任务并把结果放入待上报队列 → 恢复网络 → 期望按幂等请求编号补报完成事件，队列清空。建议命令：`adb shell svc wifi disable`、`adb shell svc wifi enable`、`adb logcat -d | grep -E "CloudEventQueue|retry|flush"`。
+- [ ] **Z6. 忙碌态拒绝新任务**：先从云端下发长任务并确认执行中 → 再下发第二个任务 → 期望端侧不并发执行，第二个任务回传 `TASK_BUSY` 或排队策略结果，用户界面不出现两个互相覆盖的任务。建议命令：`adb logcat -d | grep -E "Another task is still running|TASK_BUSY|CloudTask"`。
+- [ ] **Z7. 敏感信息脱敏**：下发包含联系人、通知或聊天读取的任务 → 任务失败或生成调试报告 → 期望上报只包含错误码、摘要、任务编号和脱敏消息，不上传完整通知正文、联系人列表、提示词、密钥。建议命令：`adb logcat -d | grep -E "CloudResult|CloudError"` 并人工确认无密钥/通知正文。
+
+---
+
 ## QA Debug Changelog
 
 Format: `[date] [status] [test-id] description`
+
+[2026-05-15] [NOTE]    Z-plan  为 CMP-2001 落地端云设备节点注册、心跳、任务拉取、结果回传、离线缓存与脱敏验收草案；本轮为方案和清单变更，未接入真实 dyq 接口，设备实测待后端契约与模拟服务就绪后执行。
+[2026-05-15] [NOTE]    Z-plan  为 CMP-1835/CMP-1876 补充 `docs/product/pokeclaw-executor-node-plan.md`，明确端侧执行节点定位、注册/心跳/任务拉取/结果回传状态映射、错误码、脱敏和最小闭环边界。
+[2026-05-15] [NOTE]    Z-plan  复查 CMP-1835 当前最高优先级任务，补充两种实现方案取舍和 Kotlin 文件改动清单；选择独立 `cloudnode` 端云适配层，禁止把网络请求塞进 `TaskOrchestrator`。
+[2026-05-15] [PASS]    Z-plan  针对 CMP-1861 新增 `docs/product/pokeclaw-cloud-task-closed-loop-audit.md`，完成设备注册、任务轮询、结果回传、错误上报、本地离线缓存摸底；执行 `./gradlew --no-daemon testDebugUnitTest assembleDebug` 通过，首次守护进程目录占用失败已通过停止守护进程和清理生成目录复测通过。
+[2026-05-15] [BLOCKED] Z-build 在 `/mnt/e/code/PokeClaw` 执行 `./gradlew testDebugUnitTest assembleDebug`，因当前环境未设置 `JAVA_HOME` 且找不到 `java`/`javac`，构建未进入编译阶段；待安装或配置 JDK 后重跑。
+[2026-05-15] [BLOCKED] Z-build 复核 CMP-1876 时再次执行 `./gradlew testDebugUnitTest assembleDebug`：当前已有 `/usr/bin/java` 与 `/usr/bin/javac`，但 `ANDROID_HOME`、`ANDROID_SDK_ROOT` 均为空，仓库也没有 `local.properties` 的 `sdk.dir`，构建失败于 `SDK location not found`；待配置 Android SDK 后重跑。
 
 ### 2026-04-08 — Initial QA run
 
