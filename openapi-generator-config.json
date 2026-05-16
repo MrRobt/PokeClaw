@@ -1,0 +1,15 @@
+{
+  "modelPackage": "io.agents.pokeclaw.cloud.model",
+  "apiPackage": "io.agents.pokeclaw.cloud.api",
+  "invokerPackage": "io.agents.pokeclaw.cloud",
+  "groupId": "io.agents.pokeclaw",
+  "artifactId": "cloud-api",
+  "artifactVersion": "1.0.0",
+  "library": "jvm-retrofit2",
+  "serializationLibrary": "gson",
+  "useCoroutines": true,
+  "dateLibrary": "java8",
+  "generateModelDocumentation": false,
+  "generateApiDocumentation": false,
+  "skipDefaultInterface": false
+}

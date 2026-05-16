@@ -2,6 +2,15 @@
 
 Every build must pass ALL checks before shipping.
 
+## QA Debug Changelog
+
+| 日期 | 状态 | 问题编号 | 描述 |
+|------|------|----------|------|
+| 2026-05-16 | PASS | CMP-137 | 【Android】PokeClaw端侧对接 — 设备API联调准备：完成ClawApplication初始化集成，添加cloud模块懒加载；验证DTO字段与device.openapi.yaml对齐；新增Z8-Z12验收项；等待后端编译通过后启动联调 |
+| 2026-05-16 | AUDIT | CMP-137 | 【Android】PokeClaw端侧对接 — 设备API联调准备：审计完成，端侧cloud模块实现就绪，等待后端OpenAPI文件 |
+
+---
+
 Product direction lives in `README.md` under `Product Direction`, `Roadmap`, and `Known platform constraints`. QA should enforce that direction:
 fix deterministic harness/runtime bugs first, keep prompts and skills generic, and measure stochastic model behavior by repeated-trial success rate instead of hardcoding one task.
 
@@ -1037,6 +1046,11 @@ Layer 1 broadcast bypasses UI routing. Only Layer 3 catches routing bugs.
 - [ ] **Z5. 离线结果缓存与恢复补报**：任务执行中关闭网络或让模拟服务返回不可达 → 端侧继续完成本地任务并把结果放入待上报队列 → 恢复网络 → 期望按幂等请求编号补报完成事件，队列清空。建议命令：`adb shell svc wifi disable`、`adb shell svc wifi enable`、`adb logcat -d | grep -E "CloudEventQueue|retry|flush"`。
 - [ ] **Z6. 忙碌态拒绝新任务**：先从云端下发长任务并确认执行中 → 再下发第二个任务 → 期望端侧不并发执行，第二个任务回传 `TASK_BUSY` 或排队策略结果，用户界面不出现两个互相覆盖的任务。建议命令：`adb logcat -d | grep -E "Another task is still running|TASK_BUSY|CloudTask"`。
 - [ ] **Z7. 敏感信息脱敏**：下发包含联系人、通知或聊天读取的任务 → 任务失败或生成调试报告 → 期望上报只包含错误码、摘要、任务编号和脱敏消息，不上传完整通知正文、联系人列表、提示词、密钥。建议命令：`adb logcat -d | grep -E "CloudResult|CloudError"` 并人工确认无密钥/通知正文。
+- [ ] **Z8. 设备接口契约准备**：使用 dyq `api-contracts/device.openapi.yaml` 启动模拟服务 → 端侧配置云端地址并执行注册、心跳、任务拉取、结果回传 → 期望 `DeviceCloudApi` 请求路径与字段和契约一致，令牌只在 Android Keystore 加密存储，断网时结果进入 `CloudEventQueue`，恢复网络后按幂等请求编号补报。建议命令：`adb logcat -c` → 执行注册和任务回传 → `adb logcat -d | grep -E "DeviceCloudClient|CloudDeviceTokenStore|CloudEventQueue"`。
+- [ ] **Z9. 端侧执行节点本地模拟闭环**：不连接真实 dyq 后端 → 构造一条 `CloudExecutorTask` → 使用 `CloudExecutorNodeSimulator` 模拟成功和权限缺失失败 → 期望状态顺序为 `RECEIVED`、`RUNNING`、`SUCCEEDED/FAILED`，失败包含可重试错误码。建议命令：`./gradlew :app:testDebugUnitTest --tests 'io.agents.pokeclaw.cloudnode.CloudExecutorNodeContractTest' --console=plain`；真机联调后再补跑 `Z1-Z7`。
+- [ ] **Z10. 设备端 API 契约注解校验**：不连接真实 dyq 后端 → 检查 `CloudDeviceApi` Retrofit 注解 → 期望注册、心跳、任务轮询、结果回传、令牌刷新路径严格对齐 `/mnt/e/code/dyq/api-contracts/device.openapi.yaml`。建议命令：`./gradlew :app:testDebugUnitTest --tests 'io.agents.pokeclaw.cloud.api.CloudDeviceApiContractTest' --console=plain`；真机联调后再用 Z1-Z5 验证网络链路。
+- [ ] **Z11. 设备云端客户端编译闭环**：不连接真实 dyq 后端 → 编译 `DeviceCloudClient`、`CloudDeviceApi`、`CloudDeviceTokenStore`、`CloudEventQueue` → 期望注册、心跳、任务拉取、结果回传、令牌刷新调用关系可通过编译，且离线缓存不保存令牌/联系人/完整提示词。建议命令：`./gradlew :app:compileDebugKotlin --console=plain`；真机联调后再执行 Z1、Z3、Z5。
+- [ ] **Z12. 设备令牌刷新窗口与脱敏日志**：保存注册返回的 deviceToken/refreshToken → 在过期前十分钟触发刷新判断 → 期望磁盘只存加密载荷、日志不打印令牌正文、`Authorization` 只注入 `Bearer` 前缀一次。建议命令：`adb logcat -c` → 启用云端设备节点 → `adb logcat -d | grep -E "CloudDeviceTokenStore|CloudDeviceAuth"`，人工确认无 token 正文。
 
 ---
 
@@ -1044,6 +1058,7 @@ Layer 1 broadcast bypasses UI routing. Only Layer 3 catches routing bugs.
 
 Format: `[date] [status] [test-id] description`
 
+[2026-05-15] [PASS]    Z-build  针对 CMP-1801 新增 `docs/product/pokeclaw-dyq-build-interface-verification.md`，完成 PokeClaw 编译环境、安卓依赖、APK 产物、DYQ `device.openapi.yaml` 与 `executor-node.openapi.yaml` 接口联调清单核查；执行 `./gradlew :app:assembleDebug --console=plain` 与 `./gradlew :app:testDebugUnitTest --console=plain` 均通过；执行 `adb devices -l` 未发现已连接设备，真机 Z1-Z7 待后续联调执行。
 [2026-05-15] [NOTE]    Z-plan  为 CMP-2001 落地端云设备节点注册、心跳、任务拉取、结果回传、离线缓存与脱敏验收草案；本轮为方案和清单变更，未接入真实 dyq 接口，设备实测待后端契约与模拟服务就绪后执行。
 [2026-05-15] [NOTE]    Z-plan  为 CMP-1835/CMP-1876 补充 `docs/product/pokeclaw-executor-node-plan.md`，明确端侧执行节点定位、注册/心跳/任务拉取/结果回传状态映射、错误码、脱敏和最小闭环边界。
 [2026-05-15] [NOTE]    Z-plan  复查 CMP-1835 当前最高优先级任务，补充两种实现方案取舍和 Kotlin 文件改动清单；选择独立 `cloudnode` 端云适配层，禁止把网络请求塞进 `TaskOrchestrator`。
