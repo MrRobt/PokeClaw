@@ -319,12 +319,27 @@ class CloudNodeOrchestrator(
     private fun readNetworkType(): NetworkType {
         return try {
             val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? android.net.ConnectivityManager
-            val activeNetwork = cm?.activeNetworkInfo
-            when {
-                activeNetwork == null || !activeNetwork.isConnected -> NetworkType.OFFLINE
-                activeNetwork.type == android.net.ConnectivityManager.TYPE_WIFI -> NetworkType.WIFI
-                activeNetwork.type == android.net.ConnectivityManager.TYPE_MOBILE -> NetworkType.CELLULAR
-                else -> NetworkType.UNKNOWN
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                // Android 6.0+ 使用新的 NetworkCapabilities API
+                val network = cm?.activeNetwork
+                val capabilities = network?.let { cm.getNetworkCapabilities(it) }
+                when {
+                    network == null || capabilities == null -> NetworkType.OFFLINE
+                    capabilities.hasTransport(android.net.NetworkCapabilities.TRANSPORT_WIFI) -> NetworkType.WIFI
+                    capabilities.hasTransport(android.net.NetworkCapabilities.TRANSPORT_CELLULAR) -> NetworkType.CELLULAR
+                    else -> NetworkType.UNKNOWN
+                }
+            } else {
+                // 兼容旧版本（Android 5.x）
+                @Suppress("DEPRECATION")
+                val activeNetwork = cm?.activeNetworkInfo
+                @Suppress("DEPRECATION")
+                when {
+                    activeNetwork == null || !activeNetwork.isConnected -> NetworkType.OFFLINE
+                    activeNetwork.type == android.net.ConnectivityManager.TYPE_WIFI -> NetworkType.WIFI
+                    activeNetwork.type == android.net.ConnectivityManager.TYPE_MOBILE -> NetworkType.CELLULAR
+                    else -> NetworkType.UNKNOWN
+                }
             }
         } catch (e: Exception) {
             XLog.w(TAG, "readNetworkType: 读取网络类型失败", e)
