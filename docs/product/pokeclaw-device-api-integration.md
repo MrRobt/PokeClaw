@@ -1,186 +1,182 @@
-# PokeClaw 设备API联调准备清单
+# PokeClaw 端侧设备 API 联调准备清单
 
-## 问题编号
-CMP-137: 【Android】PokeClaw端侧对接 — 设备API联调准备
-
-## 审计日期
-2026-05-16
+> 关联任务：CMP-137【Android】PokeClaw端侧对接 — 设备API联调准备  
+> 文档路径：/mnt/e/code/PokeClaw/docs/product/pokeclaw-device-api-integration.md  
+> 对齐契约：/mnt/e/code/dyq/api-contracts/device.openapi.yaml
 
 ---
 
-## 一、现有实现审计结果
+## 一、已完成工作
 
-### 1. 模块结构
+### 1.1 Kotlin DTO 模型（已存在）
+
+| 文件路径 | 说明 |
+|---------|------|
+| `cloud/model/DeviceRegisterRequest.kt` | 设备注册请求 |
+| `cloud/model/DeviceRegisterResponse.kt` | 设备注册响应（含 deviceToken/refreshToken） |
+| `cloud/model/DeviceHeartbeatRequest.kt` | 心跳请求（batteryLevel/isCharging/networkType） |
+| `cloud/model/DeviceHeartbeatResponse.kt` | 心跳响应（pendingTaskCount/skillVersion/serverTime） |
+| `cloud/model/PendingTaskItem.kt` | 待处理任务项 |
+| `cloud/model/TaskResultRequest.kt` | 任务结果上报请求 |
+| `cloud/model/TokenRefreshRequest.kt` | Token刷新请求 |
+| `cloud/model/TokenRefreshResponse.kt` | Token刷新响应 |
+| `cloud/model/CloudModels.kt` | 统一模型定义（含枚举） |
+
+### 1.2 Retrofit API 接口（已存在）
+
+| 文件路径 | 说明 |
+|---------|------|
+| `cloud/api/CloudDeviceApi.kt` | 设备端API定义（5个端点） |
+| `cloud/api/CloudDeviceApiFactory.kt` | API工厂（OkHttp+Retrofit配置） |
+
+### 1.3 Token 管理（Android Keystore）
+
+| 文件路径 | 说明 |
+|---------|------|
+| `cloud/auth/CloudDeviceTokenStore.kt` | 安全令牌存储（AES-GCM加密） |
+
+### 1.4 云端客户端实现
+
+| 文件路径 | 说明 |
+|---------|------|
+| `cloud/DeviceCloudClient.kt` | 设备云端客户端接口+Retrofit实现 |
+| `cloud/CloudHeartbeatManager.kt` | WorkManager心跳调度 |
+| `cloud/CloudEventQueue.kt` | 离线事件队列（Room数据库） |
+
+### 1.5 本修复：模型对齐修正
+
+**修复1：NetworkType 枚举对齐 device.openapi.yaml**
+- 原：WIFI/CELLULAR/OFFLINE/UNKNOWN（4个值）
+- 新：WIFI/CELLULAR/OFFLINE（3个值，对齐契约）
+- 文件：`cloud/model/CloudModels.kt` 第196-201行
+
+**修复2：getNetworkType() 方法修正**
+- 原：返回 UNKNOWN 兜底，类型为 String?
+- 新：异常或未知网络返回 OFFLINE，类型为 CloudNetworkType?
+- 文件：`cloud/CloudHeartbeatManager.kt` 第283-300行
+
+---
+
+## 二、API 端点映射
+
+| 操作 | 端点 | 认证 | 请求体 | 响应体 |
+|-----|------|------|--------|--------|
+| 设备注册 | POST /api/claw-device/register | 无 | DeviceRegisterRequest | DeviceRegisterResponse |
+| 心跳保活 | POST /api/claw-device/heartbeat | Bearer JWT | DeviceHeartbeatRequest | DeviceHeartbeatResponse |
+| 任务拉取 | GET /api/claw-device/devices/{deviceId}/pending-tasks | Bearer JWT | - | List<PendingTaskItem> |
+| 结果上报 | POST /api/claw-device/tasks/{taskUuid}/result | Bearer JWT | TaskResultRequest | {message: "ok"} |
+| Token刷新 | POST /api/claw-device/token/refresh | 无 | TokenRefreshRequest | TokenRefreshResponse |
+
+---
+
+## 三、Token 管理策略
+
+### 3.1 存储安全
+- **设备Token**：存 Android Keystore，AES-GCM加密后写入 SharedPreferences
+- **刷新Token**：同上
+- **过期时间**：存 SharedPreferences，纯数值（毫秒时间戳）
+
+### 3.2 刷新策略
+- 有效期7天，刷新窗口10分钟
+- `shouldRefresh()` 在过期前10分钟触发刷新
+- 刷新失败（401）时清除本地令牌，下次重新注册
+
+### 3.3 降级策略
+- Token为空 → 尝试注册（需要deviceId已生成）
+- 注册失败 → 静默重试（指数退避）
+- 不阻塞本地功能
+
+---
+
+## 四、离线降级逻辑
+
+### 4.1 离线判定
+- 连续3次心跳失败 → 标记离线
+- 网络异常 → 标记离线
+- 401/403 → 尝试刷新Token，失败则重新注册
+
+### 4.2 离线缓存
+- 任务结果 → 写入 CloudEventQueue（Room数据库）
+- 心跳失败 → 记录失败次数，不重试（下次心跳周期再试）
+
+### 4.3 恢复上报
+- 网络恢复后，flushOfflineQueue() 批量上报
+- 失败重试3次，仍失败则保留在队列
+
+---
+
+## 五、联调步骤
+
+### 5.1 后端准备
+```bash
+# 1. 确认后端运行在 192.168.250.3:8080
+# 2. 确认 device.openapi.yaml 已部署
+# 3. 确认数据库表 claw_device 存在
+
+# 验证API
+ curl -X POST http://192.168.250.3:8080/api/claw-device/register \
+   -H "Content-Type: application/json" \
+   -d '{"deviceId":"test-device-001","deviceName":"测试设备"}'
 ```
-app/src/main/java/io/agents/pokeclaw/cloud/
-├── api/
-│   ├── CloudDeviceApi.kt          # Retrofit 接口定义
-│   └── CloudDeviceApiFactory.kt   # OkHttp + Retrofit 构建工厂
-├── auth/
-│   └── CloudDeviceTokenStore.kt   # Android Keystore JWT 存储
-├── model/
-│   └── CloudModels.kt             # 请求/响应 DTO
-├── DeviceCloudClient.kt           # 客户端接口 + Retrofit 实现
-├── CloudEventQueue.kt             # 离线结果缓存队列
-├── CloudNodeOrchestrator.kt       # 云端任务编排器
-└── CloudTaskExecutor.kt           # 云端任务执行器
-```
 
-### 2. 已实现功能
-- ✅ 设备注册 POST /api/claw-device/register
-- ✅ 心跳发送 POST /api/claw-device/heartbeat
-- ✅ 任务拉取 GET /api/claw-device/devices/{deviceId}/pending-tasks
-- ✅ 结果上报 POST /api/claw-device/tasks/{taskUuid}/result
-- ✅ Token 刷新 POST /api/claw-device/refresh-token
-- ✅ Android Keystore 加密存储 (AES-GCM)
-- ✅ 离线队列 (SharedPreferences + Gson)
-- ✅ 指数退避重试策略
-- ✅ 结果脱敏 (长度截断)
-
-### 3. 依赖配置
+### 5.2 Android端配置
 ```kotlin
-// app/build.gradle.kts
-implementation(libs.okhttp)
-implementation(libs.okhttp.logging)
-implementation(libs.retrofit)
-implementation(libs.retrofit.gson)
+// 在 ClawApplication 或设置中配置
+val baseUrl = "http://192.168.250.3:8080"
+val tokenStore = AndroidKeystoreCloudDeviceTokenStore(context)
+val offlineQueue = RoomCloudEventQueue(context)
+val client = RetrofitDeviceCloudClient.create(baseUrl, tokenStore, offlineQueue)
 ```
 
----
+### 5.3 联调检查清单
 
-## 二、阻塞问题
-
-### 1. 后端服务状态【当前阻塞】
-- **路径**: `http://192.168.250.3:8080`
-- **检查时间**: 2026-05-16 20:00
-- **状态**: ⛔ 后端服务不可达 (curl 返回空，连接失败)
-- **影响**: 无法进行真实联调，只能做端侧静态验证
-- **下一步**: 等待后端服务恢复或确认新的联调地址
-
-### 2. OpenAPI 契约文件状态【已对齐】
-- **路径**: `/mnt/e/code/dyq/api-contracts/device.openapi.yaml` ✅ 存在
-- **端侧DTO对齐**: `app/src/main/java/io/agents/pokeclaw/cloud/model/CloudModels.kt` 已对齐契约字段
-- **状态**: ✅ 字段已对齐，可启动联调
-
-### 3. 集成点状态【已实现】
-- **ClawApplication.onCreate()** ✅ 已添加 `initCloudNode()`，默认关闭，可通过KV配置启用
-- **CloudNodeOrchestrator** ✅ 已实现，支持注册/心跳/任务拉取/结果上报/离线队列
-- **TaskOrchestrator** 待后续接入云端任务执行
-- **设置页** 待添加云端管理开关UI
+| 步骤 | 操作 | 预期结果 |
+|-----|------|---------|
+| 1 | 首次启动，调用 register() | 返回 deviceToken + refreshToken，存入 Keystore |
+| 2 | 观察日志：token存储成功 | XLog 显示 "saveTokens: device token saved" |
+| 3 | 等待心跳周期（默认1分钟） | 发送心跳请求，携带 Bearer Token |
+| 4 | 心跳响应检查 | 返回 pendingTaskCount/skillVersion/serverTime |
+| 5 | 后端下发任务 | Android端收到广播 ACTION_PENDING_TASKS |
+| 6 | 执行任务，调用 submitTaskResult() | 上报成功，XLog 显示 "结果上报成功" |
+| 7 | 断开网络，执行任务 | 结果进入离线队列，XLog 显示 "结果已缓存" |
+| 8 | 恢复网络 | 自动flush离线队列，补报结果 |
+| 9 | 等待7天（或篡改过期时间） | 触发Token刷新，XLog 显示 "设备令牌已刷新" |
+| 10 | 刷新Token失败（401） | 清除本地令牌，下次重新注册 |
 
 ---
 
-## 三、联调检查清单
+## 六、已知问题与阻塞
 
-### 3.1 设备注册
-| 检查项 | 端侧实现 | 联调状态 |
-|--------|---------|---------|
-| 首次启动生成 deviceId (UUID) | ✅ CloudNodeOrchestrator.loadOrGenerateDeviceId() | ⛔ 等待后端 |
-| POST /api/claw-device/register | ✅ RetrofitDeviceCloudClient.register() | ⛔ 等待后端 |
-| deviceToken/refreshToken 保存 | ✅ AndroidKeystoreCloudDeviceTokenStore | ⛔ 等待后端 |
-| 注册失败静默重试 (指数退避) | ✅ 已实现 | ⛔ 等待后端 |
+### 6.1 当前阻塞
+- **后端编译状态**：需确认 dyq 后端 device API 实现已部署到 192.168.250.3:8080
+- **测试设备**：需真机或模拟器运行 PokeClaw APK
 
-### 3.2 心跳保活
-| 检查项 | 端侧实现 | 联调状态 |
-|--------|---------|---------|
-| 协程心跳循环 30s 间隔 | ✅ CloudNodeOrchestrator.heartbeatLoop() | ⛔ 等待后端 |
-| POST /api/claw-device/heartbeat | ✅ RetrofitDeviceCloudClient.sendHeartbeat() | ⛔ 等待后端 |
-| 携带 batteryLevel/networkType | ✅ DeviceHeartbeatRequest 构建 | ⛔ 等待后端 |
-| 连续3次失败标记离线 | ✅ consecutiveHeartbeatFailures 计数 | ⛔ 等待后端 |
-
-### 3.3 任务拉取
-| 检查项 | 端侧实现 | 联调状态 |
-|--------|---------|---------|
-| 心跳响应 pendingTaskCount>0 触发 | ✅ DeviceHeartbeatResponse.pendingTaskCount | ⛔ 等待后端 |
-| GET /api/claw-device/devices/{deviceId}/pending-tasks | ✅ CloudDeviceApi.getPendingTasks() | ⛔ 等待后端 |
-| 任务列表非空时调度执行 | ✅ onPendingTasksAvailable() | ⛔ 等待后端 |
-
-### 3.4 结果上报
-| 检查项 | 端侧实现 | 联调状态 |
-|--------|---------|---------|
-| 任务完成后调用 submitTaskResult | ✅ executeCloudTask() 内部调用 | ⛔ 等待后端 |
-| 成功时移除离线队列 | ✅ CloudEventQueue.markSucceeded() | ⛔ 等待后端 |
-| 失败时缓存到离线队列 | ✅ CloudEventQueue.enqueue() | ⛔ 等待后端 |
-| 网络恢复后补报 | ✅ flushOfflineQueue() | ⛔ 等待后端 |
-
-### 3.5 Token 管理
-| 检查项 | 端侧实现 | 联调状态 |
-|--------|---------|---------|
-| 过期前自动触发刷新 | ✅ refreshTokenIfNeeded() | ⛔ 等待后端 |
-| POST /api/claw-device/token/refresh | ✅ CloudDeviceApi.refreshDeviceToken() | ⛔ 等待后端 |
-| 新 token 更新到 Keystore | ✅ tokenStore.updateDeviceToken() | ⛔ 等待后端 |
-| 刷新失败清空 token 重新注册 | ✅ tokenStore.clear() | ⛔ 等待后端 |
+### 6.2 待验证问题
+1. 设备注册时 deviceId 生成策略（UUID/IMEI/自定义）
+2. 心跳间隔在生产环境是否可调（当前默认1分钟）
+3. 离线队列容量上限（当前未设限）
+4. 截图上报的 Base64 大小限制
 
 ---
 
-## 四、字段对齐验证
+## 七、文件改动摘要
 
-### DTO 对比
-
-| OpenAPI 字段 | Kotlin DTO | 状态 |
-|--------------|-----------|------|
-| DeviceRegisterRequest.deviceId | CloudModels.DeviceRegisterRequest.deviceId | ✅ 对齐 |
-| DeviceRegisterRequest.deviceName | CloudModels.DeviceRegisterRequest.deviceName | ✅ 对齐 |
-| DeviceRegisterResponse.deviceToken | CloudModels.DeviceRegisterResponse.deviceToken | ✅ 对齐 |
-| DeviceRegisterResponse.refreshToken | CloudModels.DeviceRegisterResponse.refreshToken | ✅ 对齐 |
-| DeviceHeartbeatRequest.batteryLevel | CloudModels.DeviceHeartbeatRequest.batteryLevel | ✅ 对齐 |
-| DeviceHeartbeatRequest.isCharging | CloudModels.DeviceHeartbeatRequest.isCharging | ✅ 对齐 |
-| DeviceHeartbeatRequest.networkType | CloudModels.DeviceHeartbeatRequest.networkType | ✅ 对齐 |
-| DeviceHeartbeatResponse.pendingTaskCount | CloudModels.DeviceHeartbeatResponse.pendingTaskCount | ✅ 对齐 |
-| PendingTaskItem.taskUuid | CloudModels.PendingTaskItem.taskUuid | ✅ 对齐 |
-| PendingTaskItem.command | CloudModels.PendingTaskItem.command | ✅ 对齐 |
-| TaskResultRequest.status | CloudModels.TaskResultRequest.status | ✅ 对齐 |
-| TaskResultRequest.result | CloudModels.TaskResultRequest.result | ✅ 对齐 |
+| 文件 | 改动类型 | 说明 |
+|-----|---------|------|
+| `cloud/model/CloudModels.kt` | 修复 | NetworkType 枚举移除 UNKNOWN，对齐 device.openapi.yaml |
+| `cloud/CloudHeartbeatManager.kt` | 修复 | getNetworkType() 方法修正返回值和异常处理 |
+| `docs/product/pokeclaw-device-api-integration.md` | 新增 | 本文档 |
 
 ---
 
-## 五、风险边界确认
+## 八、下一步行动
 
-| 风险项 | 现状 | 措施 |
-|--------|------|------|
-| 分层破坏 | 否 | cloud 包独立，不依赖 UI 层 |
-| 跨模块 JOIN | 否 | 无数据库操作 |
-| 敏感信息泄露 | 否 | Keystore 加密 + 脱敏 |
-| 非官方接口 | 否 | 仅使用标准 Android API |
-| 后台常驻 | 合规 | 使用协程循环，非 WorkManager |
+1. **后端确认**：确认 /api/claw-device/* 接口已部署并可访问
+2. **联调测试**：按第5节步骤逐项验证
+3. **问题修复**：联调中发现问题在此Issue下跟进
+4. **E2E QA**：按 QA_CHECKLIST.md 执行端云联调测试
 
 ---
 
-## 六、产出文件清单
-
-| 文件路径 | 状态 | 说明 |
-|----------|------|------|
-| docs/product/pokeclaw-device-api-integration.md | 本文件 | 联调准备清单 (已更新) |
-| app/src/main/java/io/agents/pokeclaw/cloud/ | 已实现 | 云端模块完整实现 |
-| /mnt/e/code/dyq/api-contracts/device.openapi.yaml | 存在 | 后端契约文件 |
-
----
-
-## 七、联调启动条件
-
-以下条件全部满足后方可启动真实联调：
-1. ✅ 端侧实现审计完成
-2. ✅ 后端 OpenAPI 文件提供
-3. ⛔ 后端服务部署完成（当前不可达）
-4. ⛔ 测试设备可用
-5. ⛔ 联调环境配置完成
-
----
-
-## 八、当前阻塞与下一步
-
-### 阻塞项
-- 后端服务 `http://192.168.250.3:8080` 当前不可达
-- curl 测试注册接口无响应
-
-### 下一步
-1. 等待后端服务恢复
-2. 确认联调地址（可能不是 192.168.250.3:8080）
-3. 获取测试用设备凭证
-4. 执行完整端到端联调
-
----
-
-**审计完成时间**: 2026-05-16  
-**审计人**: 安卓小龙  
-**问题编号**: CMP-137
+**更新记录：**
+- 2025-05-17 小黑：创建文档，修复 NetworkType 枚举对齐问题

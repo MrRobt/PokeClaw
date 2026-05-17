@@ -6,6 +6,7 @@ Every build must pass ALL checks before shipping.
 
 | 日期 | 状态 | 问题编号 | 描述 |
 |------|------|----------|------|
+| 2026-05-17 | PASS | CMP-137 | 【Android】PokeClaw端侧对接 — 设备API联调准备：修复NetworkType枚举对齐device.openapi.yaml规范（移除UNKNOWN），修复CloudHeartbeatManager.getNetworkType()返回值类型，产出联调准备清单文档，提交main分支commit 47e57f0 |
 | 2026-05-17 | PASS | CMP-1964 | PokeClaw端侧执行端心跳与错误上报方案：产出完整方案文档，涵盖心跳机制、错误码体系、离线重试策略、端云字段映射、编排器状态机和待验证清单 |
 | 2026-05-17 | PASS | CMP-1940 | 【Android】PokeClaw端云任务下发与结果回传联调清单：完成端云接口字段映射审查，产出联调文档；修复后端状态枚举注释不一致问题；修复Token刷新接口缺少refreshToken问题；输出修复文件清单和待验证项 |
 | 2026-05-16 | PASS | CMP-137 | 【Android】PokeClaw端侧对接 — 设备API联调准备：完成ClawApplication初始化集成，添加cloud模块懒加载；验证DTO字段与device.openapi.yaml对齐；新增Z8-Z12验收项；等待后端编译通过后启动联调 |

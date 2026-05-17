@@ -163,6 +163,7 @@ class CloudHeartbeatManager private constructor(
     /**
      * 构建心跳请求。
      * 复用 AppCapabilityCoordinator 的能力快照。
+     * 对齐 device.openapi.yaml 字段规范。
      */
     fun buildHeartbeatRequest(): DeviceHeartbeatRequest {
         // 获取设备状态信息
@@ -173,7 +174,7 @@ class CloudHeartbeatManager private constructor(
         return DeviceHeartbeatRequest(
             batteryLevel = batteryLevel,
             isCharging = isCharging,
-            networkType = networkType
+            networkType = networkType?.value
         )
     }
 
@@ -278,22 +279,23 @@ class CloudHeartbeatManager private constructor(
 
     /**
      * 获取网络类型。
+     * 对齐 device.openapi.yaml：仅返回 wifi/cellular/offline
      */
-    private fun getNetworkType(): String? {
+    private fun getNetworkType(): CloudNetworkType? {
         return try {
             val connectivityManager = context.getSystemService(Context.CONNECTIVITY_SERVICE)
                 as? android.net.ConnectivityManager
 
             connectivityManager?.activeNetworkInfo?.let { networkInfo ->
                 when (networkInfo.type) {
-                    android.net.ConnectivityManager.TYPE_WIFI -> CloudNetworkType.WIFI.value
-                    android.net.ConnectivityManager.TYPE_MOBILE -> CloudNetworkType.CELLULAR.value
-                    else -> CloudNetworkType.UNKNOWN.value
+                    android.net.ConnectivityManager.TYPE_WIFI -> CloudNetworkType.WIFI
+                    android.net.ConnectivityManager.TYPE_MOBILE -> CloudNetworkType.CELLULAR
+                    else -> CloudNetworkType.OFFLINE
                 }
-            } ?: CloudNetworkType.OFFLINE.value
+            } ?: CloudNetworkType.OFFLINE
         } catch (e: Exception) {
             XLog.w(TAG, "获取网络类型失败", e)
-            CloudNetworkType.UNKNOWN.value
+            CloudNetworkType.OFFLINE
         }
     }
 

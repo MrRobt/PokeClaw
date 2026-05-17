@@ -192,12 +192,12 @@ enum class DeviceCloudStatus {
 
 /**
  * 网络类型枚举
+ * 对齐 device.openapi.yaml — 仅支持 wifi/cellular/offline
  */
 enum class NetworkType(val value: String) {
     WIFI("wifi"),
     CELLULAR("cellular"),
-    OFFLINE("offline"),
-    UNKNOWN("unknown")
+    OFFLINE("offline")
 }
 
 /**
