@@ -89,7 +89,7 @@ class CloudExecutorNode(
             "input_text",
             "go_back",
             "search_in_app",
-            "copy_screen_text",
+            "screenshot",
             "accept_permission",
             "dismiss_popup",
             "swipe_gesture"

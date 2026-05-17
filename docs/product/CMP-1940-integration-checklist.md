@@ -363,22 +363,30 @@ CMP-1940 (本任务)
 |:---|:---|:---|
 | 2026-05-17 | 创建 | 初始版本，产出完整联调清单 |
 | 2026-05-17 | 更新 | 后端服务状态检查，确认当前阻塞 |
-| 2026-05-17 | 更新 | 安卓小龙执行任务检查，发现Token刷新响应缺少refreshToken字段 |
+| 2026-05-17 | 更新 | 安卓小龙执行检查，发现Token刷新响应缺少refreshToken字段 |
 | 2026-05-17 | 更新 | 安卓小龙执行检查：端侧代码完整，等待后端服务恢复（CMP-71阻塞） |
+| 2026-05-17 | 安卓小龙本轮执行 | 验证端侧代码完整性，运行单元测试通过，补充待验证清单，产出执行评论 |
+| 2026-05-17 | 安卓小龙本轮执行 | 再次验证端侧代码完整性，确认DTO/Retrofit接口与后端契约对齐，后端仍不可达 |
+|| 2026-05-17 | 安卓小龙本轮执行 | 运行单元测试CloudExecutorNodeTest通过，验证9种任务类型闭环，后端服务仍阻塞 |
+|| 2026-05-17 | 安卓小龙本轮执行 | 验证端侧cloud模块8个Kotlin文件完整性，后端192.168.250.3:8080仍不可达 |
 
 ---
 
-## 十一、后端服务状态检查（2026-05-17）
+## 十一、后端服务状态检查（2026-05-17 16:50）
 
 ### 检查结果
 
 ```bash
 # 健康检查
-curl -s http://192.168.250.3:8080/actuator/health
+$ curl -s http://192.168.250.3:8080/actuator/health
 # 结果: 连接失败（空响应）
+
+# 纸夹API获取任务列表
+$ curl -s "http://127.0.0.1:3101/api/companies/.../issues?assigneeAgentId=..."
+# 结果: 正常返回，PokeClaw相关任务状态已确认
 ```
 
-**当前状态**: ⛔ 后端服务当前不可达，等待CMP-71编译修复完成
+**当前状态**: ⛔ 后端服务当前不可达，等待后端编译修复完成（CMP-71系列阻塞）
 
 ### 阻塞影响
 - 无法执行真实端到端联调
@@ -393,8 +401,16 @@ curl -s http://192.168.250.3:8080/actuator/health
 ### 端侧状态（已就绪）
 - ✅ DTO模型已对齐：`CloudModels.kt` 包含完整字段
 - ✅ Retrofit接口已定义：`CloudDeviceApi.kt` 对齐 device.openapi.yaml
-- ✅ 执行节点引擎已实现：`CloudExecutorNode.kt` 提供完整闭环
-- ✅ 任务桥接器已实现：`CloudTaskExecutorBridge.kt` 支持10种技能
+- ✅ 执行节点引擎已实现：`CloudNodeOrchestrator.kt` 提供完整闭环
+- ✅ 任务桥接器已实现：`CloudTaskExecutor.kt` 支持10种技能
+
+### 本轮验证结果
+- ✅ 端侧代码完整性：cloud/模块8个Kotlin文件完整
+- ✅ DTO字段对齐：DeviceRegisterRequest/Response、DeviceHeartbeatRequest/Response、TaskResultRequest 与后端契约一致
+- ✅ Retrofit接口完整：5个端点（register、heartbeat、pending-tasks、result、token/refresh）
+- ✅ 离线队列实现：`CloudEventQueue.kt` 支持 SharedPreferences+Gson 持久化
+- ✅ Token安全存储：`CloudDeviceTokenStore.kt` 使用 Android Keystore
+- ⛔ 后端服务不可达：阻塞端到端验证
 
 ---
 

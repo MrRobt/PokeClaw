@@ -254,6 +254,9 @@ class CloudNodeOrchestrator(
         val executionTimeMs = clock.nowMillis() - startTime
         val statusReport = mapResultToStatusReport(result)
 
+        // 构造错误详情（仅失败时填充）
+        val errorDetail = if (!result.success) buildErrorDetail(result) else null
+
         // 上报结果
         val reportRequest = TaskResultRequest(
             status = statusReport,
@@ -261,6 +264,12 @@ class CloudNodeOrchestrator(
             errorMessage = if (!result.success) result.message.take(1024) else null,
             executionTimeMs = executionTimeMs,
             modelUsed = taskExecutor.getModelName(),
+            // 错误回传字段（对齐云端错误上报协议）
+            errorCategory = errorDetail?.category,
+            errorCode = errorDetail?.code,
+            errorDetail = errorDetail?.detail,
+            recoverable = errorDetail?.recoverable,
+            suggestedAction = errorDetail?.suggestedAction,
         )
 
         try {
@@ -282,6 +291,65 @@ class CloudNodeOrchestrator(
             result.errorCode == CloudTaskErrorCode.PERMISSION_MISSING -> TaskStatus.FAILED.value
             result.retryable -> TaskStatus.FAILED.value
             else -> TaskStatus.FAILED.value
+        }
+    }
+
+    /**
+     * 构造错误详情（用于云端错误回传）。
+     * 将 CloudTaskErrorCode 映射为结构化错误信息。
+     */
+    private data class ErrorDetail(
+        val category: String,
+        val code: String,
+        val detail: String?,
+        val recoverable: Boolean,
+        val suggestedAction: String?,
+    )
+
+    private fun buildErrorDetail(result: CloudTaskExecutionResult): ErrorDetail {
+        return when (result.errorCode) {
+            CloudTaskErrorCode.PERMISSION_MISSING -> ErrorDetail(
+                category = "PERMISSION",
+                code = "PERMISSION_MISSING",
+                detail = "端侧缺少执行任务所需权限（无障碍服务/悬浮窗/存储等）",
+                recoverable = false,
+                suggestedAction = "请前往设置开启 PokeClaw 无障碍服务权限",
+            )
+            CloudTaskErrorCode.NETWORK_UNAVAILABLE -> ErrorDetail(
+                category = "NETWORK",
+                code = "NETWORK_UNAVAILABLE",
+                detail = "端侧网络不可用，无法完成任务",
+                recoverable = true,
+                suggestedAction = "检查网络连接后重试",
+            )
+            CloudTaskErrorCode.TASK_REJECTED -> ErrorDetail(
+                category = "TASK",
+                code = "TASK_REJECTED",
+                detail = "任务指令被拒绝或格式无效",
+                recoverable = false,
+                suggestedAction = "检查任务指令格式",
+            )
+            CloudTaskErrorCode.TOOL_FAILED -> ErrorDetail(
+                category = "TOOL",
+                code = "TOOL_FAILED",
+                detail = "工具执行失败（截图/点击/输入等）",
+                recoverable = true,
+                suggestedAction = "检查目标应用状态后重试",
+            )
+            CloudTaskErrorCode.EXECUTION_TIMEOUT -> ErrorDetail(
+                category = "TIMEOUT",
+                code = "EXECUTION_TIMEOUT",
+                detail = "任务执行超时",
+                recoverable = true,
+                suggestedAction = "简化任务或增加超时时间后重试",
+            )
+            else -> ErrorDetail(
+                category = "UNKNOWN",
+                code = "UNKNOWN_ERROR",
+                detail = result.message.take(500),
+                recoverable = result.retryable,
+                suggestedAction = if (result.retryable) "可尝试重试" else "请联系技术支持",
+            )
         }
     }
 

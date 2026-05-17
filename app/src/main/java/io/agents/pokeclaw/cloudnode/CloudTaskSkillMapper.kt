@@ -71,7 +71,7 @@ object CloudTaskSkillMapper {
         // 6. 截图/状态类指令
         if (lower.contains("截图") || lower.contains("状态") || lower.contains("屏幕") || lower.contains("screenshot") || lower.contains("screen")) {
             return SkillMapping(
-                skillId = "copy_screen_text",
+                skillId = "screenshot",
                 params = emptyMap(),
                 confidence = 0.9
             )

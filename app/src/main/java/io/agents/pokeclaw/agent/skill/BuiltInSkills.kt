@@ -184,4 +184,72 @@ object BuiltInSkills {
         ),
         fallbackGoal = "Wait for new content to appear on the screen. Check every 3 seconds."
     )
+
+    // 云端执行节点技能（用于 CloudTaskSkillMapper 映射）
+    fun launchApp() = Skill(
+        id = "launch_app",
+        name = "Launch App",
+        description = "Launch an app by name. Use when the task says 'open' or 'launch' followed by an app name.",
+        category = SkillCategory.NAVIGATION,
+        estimatedStepsSaved = 3,
+        parameters = listOf(
+            SkillParameter("app_name", "string", true, "The name of the app to launch")
+        ),
+        triggerPatterns = listOf("open {app_name}", "launch {app_name}", "start {app_name}"),
+        steps = listOf(
+            SkillStep("get_screen_info", description = "Check current screen"),
+            SkillStep("launch_app", mapOf("name" to "{app_name}"), description = "Launch the app"),
+            SkillStep("wait", mapOf("duration_ms" to "3000"), description = "Wait for app to open"),
+        ),
+        fallbackGoal = "Launch the app named {app_name}."
+    )
+
+    fun findAndTap() = Skill(
+        id = "find_and_tap",
+        name = "Find and Tap",
+        description = "Find an element by text and tap it. Use when the task says 'tap', 'click', or 'press' a button or text.",
+        category = SkillCategory.INPUT,
+        estimatedStepsSaved = 3,
+        parameters = listOf(
+            SkillParameter("text", "string", true, "The text to find and tap")
+        ),
+        triggerPatterns = listOf("tap {text}", "click {text}", "press {text}", "find {text}"),
+        steps = listOf(
+            SkillStep("get_screen_info", description = "Check screen for target"),
+            SkillStep("find_and_tap", mapOf("text" to "{text}"), description = "Tap the target"),
+            SkillStep("wait", mapOf("duration_ms" to "1000"), description = "Wait for response"),
+        ),
+        fallbackGoal = "Find and tap the element with text '{text}'."
+    )
+
+    fun inputText() = Skill(
+        id = "input_text",
+        name = "Input Text",
+        description = "Type text into the focused input field. Use when the task says 'type', 'enter', or 'input' text.",
+        category = SkillCategory.INPUT,
+        estimatedStepsSaved = 2,
+        parameters = listOf(
+            SkillParameter("text", "string", true, "The text to type")
+        ),
+        triggerPatterns = listOf("type {text}", "enter {text}", "input {text}"),
+        steps = listOf(
+            SkillStep("get_screen_info", description = "Check for input field"),
+            SkillStep("input_text", mapOf("text" to "{text}"), description = "Type the text"),
+        ),
+        fallbackGoal = "Type the text '{text}' into the current input field."
+    )
+
+    fun screenshot() = Skill(
+        id = "screenshot",
+        name = "Screenshot",
+        description = "Take a screenshot of the current screen. Use when the task asks for a screenshot or screen capture.",
+        category = SkillCategory.GENERAL,
+        estimatedStepsSaved = 1,
+        parameters = emptyList(),
+        triggerPatterns = listOf("screenshot", "capture screen", "take screenshot"),
+        steps = listOf(
+            SkillStep("screenshot", description = "Capture screen"),
+        ),
+        fallbackGoal = "Take a screenshot of the current screen."
+    )
 }

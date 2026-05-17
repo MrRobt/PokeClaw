@@ -115,28 +115,52 @@ data class PendingTaskItem(
 /**
  * 任务结果上报请求
  * POST /api/claw-device/tasks/{taskUuid}/result
+ *
+ * 对齐 device.openapi.yaml，扩展错误回传字段
  */
 data class TaskResultRequest(
     @SerializedName("status")
     val status: String,  // SUCCESS, FAILED, RUNNING, CANCELLED
-    
+
     @SerializedName("result")
     val result: String? = null,
-    
+
     @SerializedName("errorMessage")
-    val errorMessage: String? = null,
-    
+    val errorMessage: String? = null,  // 错误信息（用户可读）
+
     @SerializedName("executionTimeMs")
     val executionTimeMs: Long? = null,
-    
+
     @SerializedName("toolCalls")
     val toolCalls: String? = null,
-    
+
     @SerializedName("evidenceUrls")
     val evidenceUrls: String? = null,
-    
+
     @SerializedName("modelUsed")
-    val modelUsed: String? = null
+    val modelUsed: String? = null,
+
+    // 新增：失败回传字段
+    @SerializedName("errorCategory")
+    val errorCategory: String? = null,  // 错误大类
+
+    @SerializedName("errorCode")
+    val errorCode: String? = null,  // 错误码
+
+    @SerializedName("errorDetail")
+    val errorDetail: String? = null,  // 详细错误信息（技术层面）
+
+    @SerializedName("recoverable")
+    val recoverable: Boolean? = null,  // 是否可重试
+
+    @SerializedName("suggestedAction")
+    val suggestedAction: String? = null,  // 建议用户操作
+
+    @SerializedName("screenshotBase64")
+    val screenshotBase64: String? = null,  // 失败时的截图（可选）
+
+    @SerializedName("logSnippet")
+    val logSnippet: String? = null  // 相关日志片段
 )
 
 /**

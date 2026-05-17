@@ -18,7 +18,7 @@ class CloudExecutorNodeContractTest {
         )
         val simulator = CloudExecutorNodeSimulator(clock = FixedClock(listOf(1100L, 1200L, 1800L)))
 
-        val reports = simulator.simulate(task) {
+        val reports = simulator.simulate(task) { _ ->
             CloudTaskExecutionResult.success("电量百分之八十", listOf("logcat://task-1"))
         }
 
@@ -41,7 +41,7 @@ class CloudExecutorNodeContractTest {
         )
         val simulator = CloudExecutorNodeSimulator(clock = FixedClock(listOf(2100L, 2200L, 2300L)))
 
-        val reports = simulator.simulate(task) {
+        val reports = simulator.simulate(task) { _ ->
             CloudTaskExecutionResult.failure(
                 message = "无障碍服务未启用",
                 errorCode = CloudTaskErrorCode.PERMISSION_MISSING,

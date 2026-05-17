@@ -1,6 +1,9 @@
 package io.agents.pokeclaw.cloudnode
 
+import io.agents.pokeclaw.agent.skill.SkillRegistry
+import io.agents.pokeclaw.utils.XLog
 import org.junit.Assert.*
+import org.junit.Before
 import org.junit.Test
 
 /**
@@ -8,6 +11,13 @@ import org.junit.Test
  * 验证：任务接收 → 指令映射 → 模拟执行 → 状态上报 完整闭环。
  */
 class CloudExecutorNodeTest {
+
+    @Before
+    fun setup() {
+        XLog.setTestMode(true)
+        // 加载内置技能，确保 CloudTaskSkillMapper 能解析到技能
+        SkillRegistry.loadBuiltInSkills()
+    }
 
     private val fixedClock = FixedClock(listOf(
         1000L,  // RECEIVED
@@ -46,7 +56,7 @@ class CloudExecutorNodeTest {
         assertEquals("task-open-settings", finalReport.taskId)
         assertEquals(deviceId, finalReport.deviceId)
         assertEquals("trace-001", finalReport.traceId)
-        assertTrue(finalReport.message.contains("模拟打开应用"))
+        assertTrue(finalReport.message!!.contains("模拟打开应用"))
         assertEquals(CloudTaskErrorCode.NONE, finalReport.errorCode)
         assertFalse(finalReport.retryable)
 
@@ -65,7 +75,7 @@ class CloudExecutorNodeTest {
         )
 
         assertEquals(CloudTaskStatus.SUCCEEDED, result.last().status)
-        assertTrue(result.last().message.contains("点击"))
+        assertTrue(result.last().message!!.contains("点击"))
         assertTrue(result.last().artifacts.any { it.contains("find_and_tap") })
     }
 
@@ -80,7 +90,7 @@ class CloudExecutorNodeTest {
         )
 
         assertEquals(CloudTaskStatus.SUCCEEDED, result.last().status)
-        assertTrue(result.last().message.contains("输入"))
+        assertTrue(result.last().message!!.contains("输入"))
     }
 
     @Test
@@ -108,7 +118,7 @@ class CloudExecutorNodeTest {
         )
 
         assertEquals(CloudTaskStatus.SUCCEEDED, result.last().status)
-        assertTrue(result.last().message.contains("返回"))
+        assertTrue(result.last().message!!.contains("返回"))
     }
 
     @Test

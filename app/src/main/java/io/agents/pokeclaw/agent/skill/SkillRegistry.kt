@@ -98,6 +98,11 @@ object SkillRegistry {
         register(BuiltInSkills.swipeGesture())
         register(BuiltInSkills.goBack())
         register(BuiltInSkills.waitForContent())
+        // 云端执行节点技能
+        register(BuiltInSkills.launchApp())
+        register(BuiltInSkills.findAndTap())
+        register(BuiltInSkills.inputText())
+        register(BuiltInSkills.screenshot())
 
         SkillStatsStore.loadFromDisk()
         SkillStatsStore.syncWithSkillCatalog(skills.values)

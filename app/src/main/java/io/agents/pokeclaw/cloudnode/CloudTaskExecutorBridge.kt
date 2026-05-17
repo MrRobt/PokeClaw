@@ -99,9 +99,9 @@ class CloudTaskExecutorBridge(
                     artifacts = listOf("mock://search/$query")
                 )
             }
-            "copy_screen_text" -> CloudTaskExecutionResult.success(
+            "copy_screen_text", "screenshot" -> CloudTaskExecutionResult.success(
                 message = "模拟截图/获取屏幕文本",
-                artifacts = listOf("mock://screen_text", "screenshot://mock_001.png")
+                artifacts = listOf("screenshot://mock_001.png")
             )
             "accept_permission" -> CloudTaskExecutionResult.success(
                 message = "模拟允许权限",
