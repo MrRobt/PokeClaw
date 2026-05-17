@@ -1054,6 +1054,8 @@ Layer 1 broadcast bypasses UI routing. Only Layer 3 catches routing bugs.
 - [ ] **Z11. 设备云端客户端编译闭环**：不连接真实 dyq 后端 → 编译 `DeviceCloudClient`、`CloudDeviceApi`、`CloudDeviceTokenStore`、`CloudEventQueue` → 期望注册、心跳、任务拉取、结果回传、令牌刷新调用关系可通过编译，且离线缓存不保存令牌/联系人/完整提示词。建议命令：`./gradlew :app:compileDebugKotlin --console=plain`；真机联调后再执行 Z1、Z3、Z5。
 - [ ] **Z12. 设备令牌刷新窗口与脱敏日志**：保存注册返回的 deviceToken/refreshToken → 在过期前十分钟触发刷新判断 → 期望磁盘只存加密载荷、日志不打印令牌正文、`Authorization` 只注入 `Bearer` 前缀一次。建议命令：`adb logcat -c` → 启用云端设备节点 → `adb logcat -d | grep -E "CloudDeviceTokenStore|CloudDeviceAuth"`，人工确认无 token 正文。
 
+- [ ] **Z13. WorkManager 心跳调度**：启用云端设备节点 → 期望 WorkManager 启动 `CloudHeartbeatWorker` 周期性任务 → 查看日志确认心跳定时触发 → 关闭云端节点开关 → 期望 `WorkManager.cancelUniqueWork` 停止心跳。建议命令：`adb shell dumpsys jobscheduler | grep -E "pokeclaw|heartbeat"`、`adb logcat -d | grep -E "CloudHeartbeatWorker|心跳调度"`。
+
 ---
 
 ## QA Debug Changelog

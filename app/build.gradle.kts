@@ -163,6 +163,9 @@ dependencies {
     // NanoHTTPD 嵌入式 HTTP 服务器（局域网配置服务）
     implementation(libs.nanohttpd)
 
+    // WorkManager 周期性任务（云端心跳调度）
+    implementation(libs.workmanager)
+
 
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)
