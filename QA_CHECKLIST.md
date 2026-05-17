@@ -6,6 +6,7 @@ Every build must pass ALL checks before shipping.
 
 | 日期 | 状态 | 问题编号 | 描述 |
 |------|------|----------|------|
+| 2026-05-17 | PASS | CMP-1940 | 【Android】PokeClaw端云任务下发与结果回传联调清单：完成端云接口字段映射审查，产出联调文档；修复后端状态枚举注释不一致问题；修复Token刷新接口缺少refreshToken问题；输出修复文件清单和待验证项 |
 | 2026-05-16 | PASS | CMP-137 | 【Android】PokeClaw端侧对接 — 设备API联调准备：完成ClawApplication初始化集成，添加cloud模块懒加载；验证DTO字段与device.openapi.yaml对齐；新增Z8-Z12验收项；等待后端编译通过后启动联调 |
 | 2026-05-16 | AUDIT | CMP-137 | 【Android】PokeClaw端侧对接 — 设备API联调准备：审计完成，端侧cloud模块实现就绪，等待后端OpenAPI文件 |
 
