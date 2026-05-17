@@ -1,310 +1,366 @@
 # PokeClaw 端云任务下发与结果回传联调清单
 
-> 任务编号：CMP-1940  
-> 创建时间：2026-05-17  
-> 端侧仓库：/mnt/e/code/PokeClaw (main分支)  
-> 后端仓库：/mnt/e/code/dyq (hermes分支)  
+## 问题编号
+CMP-1940: 自动派活：PokeClaw端云任务下发与结果回传联调清单
+
+## 审计日期
+2026-05-17
+
+## 负责人
+安卓小龙
 
 ---
 
-## 一、端侧架构概览
+## 一、前提假设验证
 
-### 1.1 核心模块位置
+### 1.1 仓库路径确认
+| 检查项 | 结果 |
+|--------|------|
+| PokeClaw 安卓仓库 | `/mnt/e/code/PokeClaw` ✅ |
+| 当前分支 | `main` ✅ |
+| dyq 后端仓库 | `/mnt/e/code/dyq` ✅ |
 
-| 模块 | 路径 | 职责 |
-|:---|:---|:---|
-| CloudDeviceApi | `cloud/api/CloudDeviceApi.kt` | Retrofit API 接口定义 |
-| DeviceCloudClient | `cloud/DeviceCloudClient.kt` | 云端客户端实现 |
-| CloudNodeOrchestrator | `cloud/CloudNodeOrchestrator.kt` | 编排器（注册/心跳/任务/上报） |
-| CloudEventQueue | `cloud/CloudEventQueue.kt` | 离线结果队列 |
-| CloudDeviceTokenStore | `cloud/auth/CloudDeviceTokenStore.kt` | JWT Token 安全存储 |
-| CloudModels | `cloud/model/CloudModels.kt` | DTO 数据模型 |
-| CloudExecutorNode | `cloudnode/CloudExecutorNode.kt` | 执行节点引擎 |
+### 1.2 端侧实现状态
+| 模块 | 路径 | 状态 |
+|------|------|------|
+| Cloud API 接口定义 | `cloud/api/CloudDeviceApi.kt` | ✅ 已实现 |
+| Cloud DTO 数据模型 | `cloud/model/CloudModels.kt` | ✅ 已实现 |
+| DeviceCloudClient | `cloud/DeviceCloudClient.kt` | ✅ 已实现 |
+| CloudNodeOrchestrator | `cloud/CloudNodeOrchestrator.kt` | ✅ 已实现 |
+| CloudTaskExecutor | `cloud/CloudTaskExecutor.kt` | ✅ 已实现 |
+| CloudEventQueue | `cloud/CloudEventQueue.kt` | ✅ 已实现 |
+| CloudNode 桥接 | `cloudnode/` 包 | ✅ 已实现 |
 
-### 1.2 执行流程图
+### 1.3 后端契约文件
+| 文件 | 路径 | 状态 |
+|------|------|------|
+| device.openapi.yaml | `/mnt/e/code/dyq/api-contracts/device.openapi.yaml` | ✅ 存在 |
+| executor-node.openapi.yaml | `/mnt/e/code/dyq/api-contracts/executor-node.openapi.yaml` | ✅ 存在 |
+
+---
+
+## 二、接口字段映射清单
+
+### 2.1 设备注册接口
+
+| 端侧字段 (Kotlin) | 后端字段 (OpenAPI) | 类型 | 说明 |
+|-------------------|-------------------|------|------|
+| `DeviceRegisterRequest.deviceId` | `deviceId` | String | 设备唯一标识 |
+| `DeviceRegisterRequest.deviceName` | `deviceName` | String? | 设备名称 |
+| `DeviceRegisterRequest.deviceModel` | `deviceModel` | String? | 设备型号 |
+| `DeviceRegisterRequest.androidVersion` | `androidVersion` | String? | Android 版本 |
+| `DeviceRegisterRequest.appVersion` | `appVersion` | String? | App 版本 |
+| `DeviceRegisterRequest.publicKey` | `publicKey` | String? | 设备公钥 |
+
+**响应映射：**
+
+| 端侧字段 | 后端字段 | 说明 |
+|----------|----------|------|
+| `DeviceRegisterResponse.deviceToken` | `deviceToken` | JWT 短期令牌 (7天) |
+| `DeviceRegisterResponse.refreshToken` | `refreshToken` | JWT 刷新令牌 (30天) |
+| `DeviceRegisterResponse.expiresIn` | `expiresIn` | 过期时间（秒） |
+
+**接口路径：** `POST /api/claw-device/register`
+
+---
+
+### 2.2 心跳接口
+
+| 端侧字段 (Kotlin) | 后端字段 (OpenAPI) | 类型 | 说明 |
+|-------------------|-------------------|------|------|
+| `DeviceHeartbeatRequest.batteryLevel` | `batteryLevel` | Int? | 电量百分比 (0-100) |
+| `DeviceHeartbeatRequest.isCharging` | `isCharging` | Boolean? | 是否充电中 |
+| `DeviceHeartbeatRequest.networkType` | `networkType` | String? | wifi/cellular/offline |
+
+**响应映射：**
+
+| 端侧字段 | 后端字段 | 说明 |
+|----------|----------|------|
+| `DeviceHeartbeatResponse.pendingTaskCount` | `pendingTaskCount` | 待处理任务数量 |
+| `DeviceHeartbeatResponse.skillVersion` | `skillVersion` | 当前技能版本号 |
+| `DeviceHeartbeatResponse.serverTime` | `serverTime` | 服务器时间戳（毫秒） |
+
+**接口路径：** `POST /api/claw-device/heartbeat`
+**认证方式：** `Authorization: Bearer {deviceToken}`
+
+---
+
+### 2.3 任务拉取接口
+
+**请求参数：**
+
+| 参数名 | 类型 | 说明 |
+|--------|------|------|
+| `deviceId` (Path) | String | 设备编号 |
+| `Authorization` (Header) | String | Bearer Token |
+
+**响应：** `List<PendingTaskItem>`
+
+| 端侧字段 | 后端字段 | 类型 | 说明 |
+|----------|----------|------|------|
+| `taskUuid` | `taskUuid` | String | 任务 UUID |
+| `command` | `command` | String | 执行命令 |
+| `mode` | `mode` | String? | 执行模式 |
+| `createdAt` | `createdAt` | Long | 创建时间戳（毫秒） |
+| `priority` | `priority` | String? | 优先级 |
+
+**接口路径：** `GET /api/claw-device/devices/{deviceId}/pending-tasks`
+
+---
+
+### 2.4 任务结果上报接口
+
+| 端侧字段 (Kotlin) | 后端字段 (OpenAPI) | 类型 | 说明 |
+|-------------------|-------------------|------|------|
+| `status` | `status` | String | SUCCESS/FAILED/RUNNING/CANCELLED |
+| `result` | `result` | String? | 执行结果文本 |
+| `errorMessage` | `errorMessage` | String? | 错误信息 |
+| `executionTimeMs` | `executionTimeMs` | Long? | 执行耗时（毫秒） |
+| `toolCalls` | `toolCalls` | String? | 工具调用记录（JSON） |
+| `evidenceUrls` | `evidenceUrls` | String? | 证据 URL 列表（JSON） |
+| `modelUsed` | `modelUsed` | String? | 使用的模型 |
+| `errorCategory` | - | String? | 错误大类（端侧扩展） |
+| `errorCode` | - | String? | 错误码（端侧扩展） |
+| `errorDetail` | - | String? | 详细错误信息（端侧扩展） |
+| `recoverable` | - | Boolean? | 是否可重试（端侧扩展） |
+| `suggestedAction` | - | String? | 建议用户操作（端侧扩展） |
+| `screenshotBase64` | - | String? | 失败时截图（端侧扩展） |
+| `logSnippet` | - | String? | 相关日志片段（端侧扩展） |
+
+**接口路径：** `POST /api/claw-device/tasks/{taskUuid}/result`
+**认证方式：** `Authorization: Bearer {deviceToken}`
+
+---
+
+### 2.5 Token 刷新接口
+
+| 端侧字段 | 后端字段 | 说明 |
+|----------|----------|------|
+| `TokenRefreshRequest.refreshToken` | `refreshToken` | 刷新令牌 |
+
+**响应：**
+
+| 端侧字段 | 后端字段 | 说明 |
+|----------|----------|------|
+| `TokenRefreshResponse.deviceToken` | `deviceToken` | 新的 JWT 设备令牌 |
+| `TokenRefreshResponse.expiresIn` | `expiresIn` | 新的过期时间（秒） |
+
+**接口路径：** `POST /api/claw-device/token/refresh`
+
+---
+
+## 三、端云数据流时序
 
 ```
-┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
-│   Application   │────▶│  Orchestrator   │────▶│  DeviceCloud    │
-│   (ClawApp)     │     │   (start/stop)  │     │     Client      │
-└─────────────────┘     └─────────────────┘     └────────┬────────┘
-         │                      │                      │
-         │                      ▼                      ▼
-         │               ┌─────────────────┐     ┌─────────────────┐
-         │               │  HeartbeatLoop  │────▶│   DYQ 云端      │
-         │               │  (30s interval) │     │  (register)     │
-         │               └─────────────────┘     └─────────────────┘
-         │                      │
-         ▼                      ▼
-┌─────────────────┐     ┌─────────────────┐
-│  TaskExecutor   │◄────│  PendingTasks   │
-│ (云端任务执行)   │     │   (轮询获取)     │
-└────────┬────────┘     └─────────────────┘
-         │
-         ▼
-┌─────────────────┐     ┌─────────────────┐
-│  CloudEventQueue│◄────│  submitResult   │
-│  (离线队列缓存)   │────▶│   (结果上报)     │
-└─────────────────┘     └─────────────────┘
+┌─────────────────────────────────────────────────────────────────────┐
+│                           端云联调数据流                               │
+└─────────────────────────────────────────────────────────────────────┘
+
+[阶段1: 设备注册]
+┌──────────────┐     POST /api/claw-device/register      ┌──────────────┐
+│ PokeClaw端侧  │ ──────────────────────────────────────> │ DYQ云端      │
+│              │                                         │              │
+│ deviceId     │     响应: deviceToken, refreshToken      │ 创建设备记录  │
+│ deviceName   │ <────────────────────────────────────── │ 返回JWT令牌  │
+│ ...          │                                         │              │
+└──────────────┘                                         └──────────────┘
+
+[阶段2: 心跳循环 + 任务拉取]
+┌──────────────┐     POST /api/claw-device/heartbeat     ┌──────────────┐
+│              │ ──────────────────────────────────────> │              │
+│              │                                         │              │
+│              │     响应: pendingTaskCount               │              │
+│              │ <────────────────────────────────────── │              │
+│              │                                         │              │
+│              │  if pendingTaskCount > 0:               │              │
+│              │     GET /pending-tasks                  │              │
+│              │ ──────────────────────────────────────> │              │
+│              │                                         │              │
+│              │     响应: List<PendingTaskItem>          │              │
+│              │ <────────────────────────────────────── │              │
+└──────────────┘                                         └──────────────┘
+
+[阶段3: 任务执行 + 结果上报]
+┌──────────────┐                                        ┌──────────────┐
+│              │     POST /tasks/{taskUuid}/result       │              │
+│              │ ──────────────────────────────────────> │              │
+│              │                                         │              │
+│ 执行云端任务  │     status: SUCCESS/FAILED/...          │ 更新任务状态  │
+│ (本地Agent)  │     result/errorMessage/...             │              │
+│              │ <────────────────────────────────────── │              │
+└──────────────┘                                         └──────────────┘
+
+[阶段4: Token刷新]
+┌──────────────┐     POST /token/refresh                 ┌──────────────┐
+│              │ ──────────────────────────────────────> │              │
+│              │                                         │              │
+│ refreshToken │     响应: 新的 deviceToken             │ 验证并颁发   │
+│              │ <────────────────────────────────────── │ 新令牌       │
+└──────────────┘                                         └──────────────┘
 ```
 
 ---
 
-## 二、API 接口字段映射
+## 四、端侧关键类职责
 
-### 2.1 设备注册
+### 4.1 CloudNodeOrchestrator（云端编排器）
 
-| 端侧字段 | 类型 | 后端字段 | 说明 |
-|:---|:---|:---|:---|
-| deviceId | String | deviceId | 设备唯一标识，客户端生成 UUID |
-| deviceName | String? | deviceName | 设备名称，默认 Build.MODEL |
-| deviceModel | String? | deviceModel | 设备型号，Build.MODEL |
-| androidVersion | String? | androidVersion | Android 版本，Build.VERSION.RELEASE |
-| appVersion | String? | appVersion | App 版本，BuildConfig.VERSION_NAME |
-| publicKey | String? | publicKey | 预留公钥字段 |
+| 方法 | 职责 |
+|------|------|
+| `start()` | 启动编排器：读取/生成 deviceId → 注册 → 启动心跳循环 |
+| `stop()` | 停止编排器，取消心跳协程 |
+| `heartbeatLoop()` | 30秒间隔心跳：刷新Token → 补报离线队列 → 发送心跳 → 拉取任务 |
+| `executeCloudTask()` | 执行单个云端任务，调用 CloudTaskExecutor，上报结果 |
+| `onPendingTasksAvailable()` | 收到待处理任务时的回调入口 |
 
-**返回字段映射**：
-| 端侧字段 | 后端字段 | 存储位置 |
-|:---|:---|:---|
-| deviceToken | deviceToken | Android Keystore 加密存储 |
-| refreshToken | refreshToken | Android Keystore 加密存储 |
-| expiresIn | expiresIn | SharedPreferences (明文毫秒时间戳) |
+### 4.2 DeviceCloudClient（云端客户端）
 
-### 2.2 心跳请求
+| 方法 | 职责 |
+|------|------|
+| `register()` | 设备注册，成功后保存 Token |
+| `sendHeartbeat()` | 发送心跳，返回是否成功 |
+| `getPendingTasks()` | 拉取待处理任务列表 |
+| `submitTaskResult()` | 提交任务结果，失败时缓存到离线队列 |
+| `refreshTokenIfNeeded()` | 过期前自动刷新 Token |
+| `flushOfflineQueue()` | 补报离线队列中的事件 |
 
-| 端侧字段 | 类型 | 后端字段 | 采集方式 |
-|:---|:---|:---|:---|
-| batteryLevel | Int? | batteryLevel | BatteryManager 系统 API |
-| isCharging | Boolean? | isCharging | BatteryManager 系统 API |
-| networkType | String? | networkType | ConnectivityManager，枚举值：wifi/cellular/offline |
+### 4.3 CloudEventQueue（离线事件队列）
 
-**返回字段**：
-| 字段 | 类型 | 用途 |
-|:---|:---|:---|
-| pendingTaskCount | Int | 待处理任务数，>0 时触发任务拉取 |
-| skillVersion | Int | 技能版本号，用于热更新提示 |
-| serverTime | Long | 服务器时间戳，用于时钟同步 |
+| 方法 | 职责 |
+|------|------|
+| `enqueue()` | 将结果事件加入离线队列（上限100条） |
+| `peekDue()` | 获取到期的待上报事件 |
+| `markSucceeded()` | 标记事件上报成功，从队列移除 |
+| `markFailed()` | 标记事件上报失败，增加重试计数和延迟 |
+| `clear()` | 清空队列 |
 
-### 2.3 任务结果上报
+**重试策略：** 指数退避（1s, 2s, 4s, 8s, 16s, 32s）
 
-| 端侧字段 | 类型 | 后端字段 | 来源 |
-|:---|:---|:---|:---|
-| status | String | status | SUCCESS/FAILED/RUNNING/CANCELLED |
-| result | String? | result | 执行结果文本（截断 2048 字符） |
-| errorMessage | String? | errorMessage | 错误信息（截断 1024 字符） |
-| executionTimeMs | Long? | executionTimeMs | 执行耗时计算 |
-| toolCalls | String? | toolCalls | 工具调用记录（JSON 字符串） |
-| evidenceUrls | String? | evidenceUrls | 证据 URL 列表 |
-| modelUsed | String? | modelUsed | 使用模型名称 |
+### 4.4 CloudTaskExecutor（任务执行器）
 
-**扩展失败回传字段**（已定义但未完全使用）：
-| 字段 | 类型 | 用途 |
-|:---|:---|:---|
-| errorCategory | String? | 错误大类 |
-| errorCode | String? | 错误码 |
-| errorDetail | String? | 详细错误信息 |
-| recoverable | Boolean? | 是否可重试 |
-| suggestedAction | String? | 建议用户操作 |
-| screenshotBase64 | String? | 失败截图 |
-| logSnippet | String? | 日志片段 |
+| 实现类 | 职责 |
+|--------|------|
+| `LocalAgentTaskExecutor` | 基于本地 AgentService 执行任务 |
+| `ExternalAutomationTaskExecutor` | 基于 ExternalAutomationEntrypoint 注入任务 |
+
+### 4.5 CloudTaskExecutorBridge（执行桥接）
+
+| 方法 | 职责 |
+|------|------|
+| `execute()` | 将云端任务映射为本地 Skill 并执行 |
+| `canExecuteLocally()` | 判断任务是否可在本地确定性执行 |
 
 ---
 
-## 三、已发现问题与修复（4项已修复）
+## 五、联调步骤
 
-### 3.1 问题1：TokenStore hasDeviceToken() 空安全漏洞 ✅ 已修复
+### 步骤1：后端服务启动验证
 
-**位置**：`cloud/auth/CloudDeviceTokenStore.kt:24-25`
-
-**原代码**：
-```kotlin
-fun hasDeviceToken(nowMillis: Long = System.currentTimeMillis()): Boolean =
-    deviceToken.isNotBlank() && expiresAtMillis > nowMillis
+```bash
+# 检查后端服务是否可达
+curl -s http://192.168.250.3:8080/api/claw-device/register \
+  -X POST \
+  -H "Content-Type: application/json" \
+  -d '{
+    "deviceId": "pokeclaw-test-001",
+    "deviceName": "联调测试机",
+    "deviceModel": "TestModel",
+    "androidVersion": "14",
+    "appVersion": "0.7.0"
+  }'
 ```
 
-**问题**：方法只在非 null 实例上调用，但调用方可能未正确处理 null
+**预期：** 返回 JSON 包含 `deviceToken` 和 `refreshToken`
 
-**修复后**：
-```kotlin
-fun hasDeviceToken(nowMillis: Long = System.currentTimeMillis()): Boolean =
-    deviceToken.isNotBlank() && expiresAtMillis > nowMillis
-
-/**
- * 安全包装：返回 token 是否有效，自动处理 null 情况
- */
-fun CloudDeviceTokenStore.hasValidToken(nowMillis: Long = System.currentTimeMillis()): Boolean =
-    snapshot()?.hasDeviceToken(nowMillis) ?: false
-```
-
-### 3.2 问题2：DeviceCloudClient.getPendingTasks 参数冗余
-
-**位置**：`cloud/DeviceCloudClient.kt:84-98`
-
-**问题**：`getPendingTasks(deviceId: String)` 方法需要显式传入 deviceId，但 deviceId 已在注册时与 token 绑定，后端可通过 token 解析 deviceId。
-
-**建议**：后端 API 支持 `GET /api/claw-device/devices/me/pending-tasks`（无 deviceId 路径参数），端侧简化调用。
-
-### 3.3 问题3：CloudEventQueue 持久化格式不幂等
-
-**位置**：`cloud/CloudEventQueue.kt`
-
-**问题**：使用 Gson 序列化 List<PendingCloudEvent> 整体存储，单条事件修改需重写整个 JSON，大队列时性能差。
-
-**建议**：未来改用 Room 数据库，按 requestId 主键存储，支持单条 CRUD。
-
-### 3.4 问题4：CloudNodeOrchestrator 使用已废弃的网络 API ✅ 已修复（CMP-1940）
-
-**位置**：`cloud/CloudNodeOrchestrator.kt:319-333`
-
-**原代码**：
-```kotlin
-private fun readNetworkType(): NetworkType {
-    return try {
-        val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? android.net.ConnectivityManager
-        val activeNetwork = cm?.activeNetworkInfo  // ⚠️ 已废弃
-        when {
-            activeNetwork == null || !activeNetwork.isConnected -> NetworkType.OFFLINE
-            activeNetwork.type == android.net.ConnectivityManager.TYPE_WIFI -> NetworkType.WIFI  // ⚠️ 已废弃
-            activeNetwork.type == android.net.ConnectivityManager.TYPE_MOBILE -> NetworkType.CELLULAR  // ⚠️ 已废弃
-            else -> NetworkType.UNKNOWN
-        }
-    } catch (e: Exception) {
-        XLog.w(TAG, "readNetworkType: 读取网络类型失败", e)
-        NetworkType.UNKNOWN
-    }
-}
-```
-
-**问题**：`activeNetworkInfo`、`isConnected`、`TYPE_WIFI`、`TYPE_MOBILE` 等 API 在 Android API 28+ 已废弃，产生 6 条编译警告
-
-**修复后**：
-```kotlin
-private fun readNetworkType(): NetworkType {
-    return try {
-        val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? android.net.ConnectivityManager
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            // Android 6.0+ 使用新的 NetworkCapabilities API
-            val network = cm?.activeNetwork
-            val capabilities = network?.let { cm.getNetworkCapabilities(it) }
-            when {
-                network == null || capabilities == null -> NetworkType.OFFLINE
-                capabilities.hasTransport(android.net.NetworkCapabilities.TRANSPORT_WIFI) -> NetworkType.WIFI
-                capabilities.hasTransport(android.net.NetworkCapabilities.TRANSPORT_CELLULAR) -> NetworkType.CELLULAR
-                else -> NetworkType.UNKNOWN
-            }
-        } else {
-            // 兼容旧版本（Android 5.x）
-            @Suppress("DEPRECATION")
-            val activeNetwork = cm?.activeNetworkInfo
-            @Suppress("DEPRECATION")
-            when {
-                activeNetwork == null || !activeNetwork.isConnected -> NetworkType.OFFLINE
-                activeNetwork.type == android.net.ConnectivityManager.TYPE_WIFI -> NetworkType.WIFI
-                activeNetwork.type == android.net.ConnectivityManager.TYPE_MOBILE -> NetworkType.CELLULAR
-                else -> NetworkType.UNKNOWN
-            }
-        }
-    } catch (e: Exception) {
-        XLog.w(TAG, "readNetworkType: 读取网络类型失败", e)
-        NetworkType.UNKNOWN
-    }
-}
-```
-
-**修复结果**：
-- ✅ 消除了 6 条废弃 API 警告
-- ✅ 使用 Android 6.0+ 推荐的 `NetworkCapabilities` API
-- ✅ 保留对 Android 5.x 的向后兼容
-- ✅ 编译通过，功能行为保持一致
-
----
-
-## 四、联调步骤
-
-### Step 1: 后端准备
-
-1. 确保 dyq 后端 `/api/claw-device/*` 接口已部署
-2. 确认 `device.openapi.yaml` 与实现一致
-3. 准备测试设备数据库记录清理脚本
-
-### Step 2: 端侧配置
+### 步骤2：端侧配置
 
 ```kotlin
-// CloudModule.kt 或初始化代码
-val cloudClient = RetrofitDeviceCloudClient.create(
-    baseUrl = "http://192.168.250.3:8080",  // 后端地址
-    tokenStore = AndroidKeystoreCloudDeviceTokenStore(context),
-    offlineQueue = CloudEventQueue(context)
+// ClawApplication.kt 或设置页
+CloudNodeConfig(
+    baseUrl = "http://192.168.250.3:8080",
+    heartbeatIntervalMs = 30_000L,
+    autoRegisterOnStart = true
 )
-
-val orchestrator = CloudNodeOrchestrator(
-    context = context,
-    cloudClient = cloudClient,
-    tokenStore = tokenStore,
-    offlineQueue = offlineQueue,
-    taskExecutor = CloudTaskExecutor()
-)
 ```
 
-### Step 3: 测试用例
+### 步骤3：端到端验证
 
-| 测试编号 | 场景 | 步骤 | 预期结果 |
-|:---|:---|:---|:---|
-| TC-01 | 首次注册 | 清除 App 数据，启动 App | 调用 `/register`，存储 token |
-| TC-02 | 心跳保活 | 等待 30s 或强制触发心跳 | 调用 `/heartbeat`，返回 pendingTaskCount=0 |
-| TC-03 | 任务下发 | 后端创建任务分配到此设备 | 心跳返回 pendingTaskCount>0，拉取任务列表 |
-| TC-04 | 结果上报 | 执行云端任务后 | 调用 `/tasks/{taskUuid}/result`，状态更新为 SUCCESS |
-| TC-05 | 离线缓存 | 断网后执行任务 | 结果进入 CloudEventQueue，网络恢复后补报 |
-| TC-06 | Token刷新 | 等待 token 接近过期（或手动篡改） | 自动调用 `/token/refresh`，更新 deviceToken |
-| TC-07 | 连续心跳失败 | 模拟后端故障（改错误地址） | 连续 3 次失败后标记离线状态 |
+| 步骤 | 操作 | 验证点 |
+|------|------|--------|
+| 3.1 | 启动 PokeClaw 应用 | logcat 查看 `CloudNodeOrchestrator.start` |
+| 3.2 | 等待注册完成 | logcat 查看 `register: 注册成功` |
+| 3.3 | 等待心跳循环 | logcat 每30秒查看 `sendHeartbeat` |
+| 3.4 | 后端下发测试任务 | 调用后端接口创建设备任务 |
+| 3.5 | 验证任务拉取 | logcat 查看 `getPendingTasks` |
+| 3.6 | 验证任务执行 | logcat 查看 `executeCloudTask` |
+| 3.7 | 验证结果上报 | logcat 查看 `submitTaskResult: 结果上报成功` |
 
-### Step 4: 日志验证
+### 步骤4：离线场景验证
 
-过滤 Tag：`PokeClaw/CloudNodeOrchestrator`、`PokeClaw/DeviceCloudClient`、`PokeClaw/CloudEventQueue`
+| 步骤 | 操作 | 验证点 |
+|------|------|--------|
+| 4.1 | 断开网络后执行任务 | logcat 查看 `enqueue: 云端结果进入离线队列` |
+| 4.2 | 恢复网络 | logcat 查看 `flushOfflineQueue` 补报 |
+| 4.3 | 验证后端收到补报结果 | 后端数据库查询任务状态 |
 
-预期输出模式：
-```
-I PokeClaw/CloudNodeOrchestrator: start: 启动端云编排器
-I PokeClaw/CloudNodeOrchestrator: registerDevice: 注册设备 pokeclaw-xxx, model=...
-I PokeClaw/DeviceCloudClient: register: 注册成功，deviceId=...
-I PokeClaw/CloudNodeOrchestrator: heartbeatLoop: 启动心跳循环，间隔=30000ms
-D PokeClaw/DeviceCloudClient: sendHeartbeat: battery=85, network=wifi
-I PokeClaw/DeviceCloudClient: getPendingTasks: 拉取到 1 个待处理任务
-I PokeClaw/CloudNodeOrchestrator: executeCloudTask: 开始执行 taskUuid=..., command=...
-I PokeClaw/DeviceCloudClient: submitTaskResult: 结果上报成功，taskUuid=..., status=SUCCESS
-```
+### 步骤5：Token刷新验证
+
+| 步骤 | 操作 | 验证点 |
+|------|------|--------|
+| 5.1 | 等待 Token 接近过期 | logcat 查看 `refreshTokenIfNeeded` |
+| 5.2 | 验证自动刷新 | logcat 查看 `设备令牌已刷新` |
+| 5.3 | 验证后续请求使用新 Token | 心跳/任务接口正常返回 |
 
 ---
 
-## 五、待联调检查项
+## 六、当前阻塞与风险
 
-- [ ] 后端 `/api/claw-device/register` 返回字段与端侧 DTO 对齐
-- [ ] 后端心跳接口支持 batteryLevel/isCharging/networkType 写入
-- [ ] 后端 pending-tasks 接口按 deviceId 正确过滤
-- [ ] 后端任务结果接口支持全部 TaskResultRequest 字段
-- [ ] Token 刷新接口正确更新 deviceToken，保留 refreshToken
-- [ ] 后端设备管理页面可查看在线状态、电量、网络类型
-- [ ] 端到端测试：后端下发指令 → 端侧执行 → 结果回传 → 后端显示完成
+### 6.1 当前阻塞
+
+| 阻塞项 | 状态 | 说明 |
+|--------|------|------|
+| 后端服务不可达 | ⛔ 阻塞 | `http://192.168.250.3:8080` 当前连接失败 |
+| 需要后端确认接口路径 | ⚠️ 待定 | 确认是否使用 `/api/claw-device/*` 或新统一执行节点接口 |
+
+### 6.2 风险边界确认
+
+| 风险项 | 现状 | 措施 |
+|--------|------|------|
+| 分层破坏 | 否 | cloud 包独立，不依赖 UI 层 |
+| 跨模块事务 | 否 | 无数据库操作，纯网络通信 |
+| 敏感信息泄露 | 否 | Keystore 加密 + 脱敏（2048字符截断） |
+| 非官方接口 | 否 | 仅使用标准 Android API |
+| 后台常驻 | 合规 | 使用协程循环，非 WorkManager |
 
 ---
 
-## 六、相关文件清单
+## 七、产出文件清单
 
 | 文件路径 | 说明 |
-|:---|:---|
-| `app/src/main/java/io/agents/pokeclaw/cloud/api/CloudDeviceApi.kt` | Retrofit API 接口 |
-| `app/src/main/java/io/agents/pokeclaw/cloud/DeviceCloudClient.kt` | 云端客户端实现 |
-| `app/src/main/java/io/agents/pokeclaw/cloud/CloudNodeOrchestrator.kt` | 编排器（核心逻辑） |
-| `app/src/main/java/io/agents/pokeclaw/cloud/CloudEventQueue.kt` | 离线事件队列 |
-| `app/src/main/java/io/agents/pokeclaw/cloud/auth/CloudDeviceTokenStore.kt` | Token 安全存储 |
-| `app/src/main/java/io/agents/pokeclaw/cloud/model/CloudModels.kt` | DTO 数据模型 |
-| `app/src/main/java/io/agents/pokeclaw/cloudnode/CloudExecutorNode.kt` | 执行节点引擎 |
-| `app/src/main/java/io/agents/pokeclaw/cloudnode/CloudTaskExecutorBridge.kt` | 任务执行桥接 |
-| `/mnt/e/code/dyq/api-contracts/device.openapi.yaml` | 后端 API 契约 |
+|----------|------|
+| `docs/product/pokeclaw-cloud-integration-checklist.md` | 本联调清单文档 |
+| `app/src/main/java/io/agents/pokeclaw/cloud/` | 云端模块完整实现 |
+| `app/src/main/java/io/agents/pokeclaw/cloudnode/` | 云端节点桥接实现 |
+| `docs/product/pokeclaw-device-api-integration.md` | 设备API联调准备文档 |
+| `docs/product/pokeclaw-device-node-integration.md` | 设备节点集成方案文档 |
 
 ---
 
-## 七、产出路径
+## 八、待验证清单
 
-- 本文档：`/mnt/e/code/PokeClaw/docs/product/pokeclaw-cloud-integration-checklist.md`
-- 关联任务：CMP-1940
+- [ ] 后端服务 `http://192.168.250.3:8080` 可正常访问
+- [ ] 设备注册接口返回正确的 JWT Token
+- [ ] 心跳接口正常响应，返回 `pendingTaskCount`
+- [ ] 任务拉取接口返回待处理任务列表
+- [ ] 任务执行完成后结果上报成功
+- [ ] 离线时结果缓存到本地队列
+- [ ] 网络恢复后离线结果自动补报
+- [ ] Token 过期前自动刷新成功
+- [ ] 鉴权失败时引导用户重新配对
+- [ ] 敏感信息脱敏后上传（长度截断）
+
+---
+
+**文档生成时间**: 2026-05-17  
+**负责人**: 安卓小龙  
+**问题编号**: CMP-1940
