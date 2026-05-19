@@ -29,11 +29,13 @@ interface MissedCallHandler {
  * 3. 构造跟进消息
  * 4. 延迟发送
  * 5. 更新状态到UI
+ * 6. 上报云端
  */
 class DefaultMissedCallHandler(
     private val context: Context,
-    private val messageSender: FollowUpMessageSender,
-    private val historyManager: FollowUpHistoryManager
+    private val messageSender: FollowUpMessageSender? = null,
+    private val historyManager: FollowUpHistoryManager = FollowUpHistoryManager(),
+    private val cloudReporter: MissedCallCloudReporter? = null
 ) : MissedCallHandler {
 
     companion object {
@@ -54,6 +56,22 @@ class DefaultMissedCallHandler(
 
     override suspend fun onMissedCall(event: MissedCallEvent) {
         android.util.Log.i(TAG, "处理漏接来电: ${event.phoneNumber}, 响铃${event.ringDurationMs}ms")
+
+        // 上报漏接来电事件到云端
+        cloudReporter?.let { reporter ->
+            handlerScope.launch {
+                val reportResult = reporter.reportMissedCall(event)
+                when (reportResult) {
+                    is MissedCallCloudReporter.ReportResult.Success -> {
+                        android.util.Log.d(TAG, "漏接来电已上报云端")
+                    }
+                    is MissedCallCloudReporter.ReportResult.Failure -> {
+                        android.util.Log.w(TAG, "漏接来电上报失败: ${reportResult.error}")
+                        // 继续处理，不上报不影响本地功能
+                    }
+                }
+            }
+        }
 
         // 创建跟进消息记录
         val messageContent = generateMessageContent(event)
@@ -113,6 +131,9 @@ class DefaultMissedCallHandler(
                     sendTime = System.currentTimeMillis()
                 )
                 android.util.Log.i(TAG, "跟进消息发送成功: ${event.phoneNumber}")
+                
+                // 上报发送成功结果到云端
+                reportFollowUpResult(event.missedCallId, message, true)
             }
             is SendResult.Failure -> {
                 historyManager.updateStatus(
@@ -122,6 +143,9 @@ class DefaultMissedCallHandler(
                 )
                 android.util.Log.e(TAG, "跟进消息发送失败: ${event.phoneNumber}, ${result.error}")
                 
+                // 上报发送失败结果到云端
+                reportFollowUpResult(event.missedCallId, message, false, result.error)
+                
                 // 如果SMS失败且允许回退到WhatsApp
                 if (config.smsPreferred && config.whatsappFallback && result.canRetry) {
                     android.util.Log.d(TAG, "尝试通过WhatsApp发送")
@@ -130,9 +154,34 @@ class DefaultMissedCallHandler(
             }
         }
     }
+    
+    /**
+     * 上报跟进消息结果到云端
+     */
+    private fun reportFollowUpResult(
+        eventId: String,
+        message: FollowUpMessage,
+        success: Boolean,
+        errorMessage: String? = null
+    ) {
+        cloudReporter?.let { reporter ->
+            handlerScope.launch {
+                val result = reporter.reportFollowUpResult(eventId, message, success, errorMessage)
+                when (result) {
+                    is MissedCallCloudReporter.ReportResult.Success -> {
+                        android.util.Log.d(TAG, "跟进结果已上报云端")
+                    }
+                    is MissedCallCloudReporter.ReportResult.Failure -> {
+                        android.util.Log.w(TAG, "跟进结果上报失败: ${result.error}")
+                    }
+                }
+            }
+        }
+    }
 
     /**
      * 尝试通过SMS发送
+     * 使用新的SmsService以获得更好的状态追踪和错误处理
      */
     private suspend fun trySendSms(
         message: FollowUpMessage,
@@ -140,30 +189,25 @@ class DefaultMissedCallHandler(
     ): SendResult {
         return try {
             if (config.autoSend) {
-                val smsManager = SmsManager.getDefault()
+                // 使用新的SmsService发送
+                val smsService = SmsService(context)
+                val result = smsService.sendSms(
+                    phoneNumber = event.phoneNumber,
+                    message = message.messageContent,
+                    requireDeliveryReport = true
+                )
                 
-                // 如果消息太长，需要分割
-                val parts = smsManager.divideMessage(message.messageContent)
-                
-                if (parts.size > 1) {
-                    smsManager.sendMultipartTextMessage(
-                        event.phoneNumber,
-                        null,
-                        parts,
-                        null,
-                        null
-                    )
-                } else {
-                    smsManager.sendTextMessage(
-                        event.phoneNumber,
-                        null,
-                        message.messageContent,
-                        null,
-                        null
-                    )
+                // 处理发送结果
+                when (result) {
+                    is SmsService.SmsSendResult.Success -> {
+                        android.util.Log.i(TAG, "SMS发送成功，消息ID: ${result.messageId}")
+                        SendResult.Success
+                    }
+                    is SmsService.SmsSendResult.Failure -> {
+                        android.util.Log.e(TAG, "SMS发送失败: ${result.error}")
+                        SendResult.Failure(result.error, canRetry = result.canRetry)
+                    }
                 }
-                
-                SendResult.Success
             } else {
                 // 非自动发送模式，交给UI层处理
                 SendResult.Failure("需要用户确认", canRetry = false)
