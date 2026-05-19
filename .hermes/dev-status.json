@@ -29,6 +29,7 @@
     "CloudHeartbeatManager - 云端心跳管理",
     "CloudAgentService - 云端Agent服务",
     "TaskPoller - 任务轮询器",
+    "CloudTaskExecutor - 云任务执行器",
     "CloudNodeOrchestrator - 云端节点编排",
     "DeviceService - 设备服务"
   ],
@@ -38,11 +39,12 @@
     "✅ 完善CloudHeartbeatManager",
     "✅ 添加TaskPoller任务轮询器",
     "✅ 完善端云集成架构",
-    "✅ 优化错误处理机制"
+    "✅ 优化错误处理机制",
+    "✅ 创建CloudTaskExecutor云任务执行器"
   ],
   "next_tasks": [
     "测试端云任务下发流程",
-    "完善设备注册流程",
+    "完善AgentService与执行器集成",
     "添加任务执行结果回传验证"
   ]
 }
