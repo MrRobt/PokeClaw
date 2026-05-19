@@ -285,12 +285,12 @@ class CloudNodeOrchestrator(
         }
     }
 
-    private fun mapResultToStatusReport(result: CloudTaskExecutionResult): String {
+    private fun mapResultToStatusReport(result: CloudTaskExecutionResult): TaskResultRequest.Status {
         return when {
-            result.success -> TaskStatus.SUCCESS.value
-            result.errorCode == CloudTaskErrorCode.PERMISSION_MISSING -> TaskStatus.FAILED.value
-            result.retryable -> TaskStatus.FAILED.value
-            else -> TaskStatus.FAILED.value
+            result.success -> TaskResultRequest.Status.SUCCESS
+            result.errorCode == CloudTaskErrorCode.PERMISSION_MISSING -> TaskResultRequest.Status.FAILED
+            result.retryable -> TaskResultRequest.Status.FAILED
+            else -> TaskResultRequest.Status.FAILED
         }
     }
 
@@ -395,7 +395,7 @@ class CloudNodeOrchestrator(
                     network == null || capabilities == null -> NetworkType.OFFLINE
                     capabilities.hasTransport(android.net.NetworkCapabilities.TRANSPORT_WIFI) -> NetworkType.WIFI
                     capabilities.hasTransport(android.net.NetworkCapabilities.TRANSPORT_CELLULAR) -> NetworkType.CELLULAR
-                    else -> NetworkType.UNKNOWN
+                    else -> NetworkType.OFFLINE
                 }
             } else {
                 // 兼容旧版本（Android 5.x）
@@ -406,12 +406,12 @@ class CloudNodeOrchestrator(
                     activeNetwork == null || !activeNetwork.isConnected -> NetworkType.OFFLINE
                     activeNetwork.type == android.net.ConnectivityManager.TYPE_WIFI -> NetworkType.WIFI
                     activeNetwork.type == android.net.ConnectivityManager.TYPE_MOBILE -> NetworkType.CELLULAR
-                    else -> NetworkType.UNKNOWN
+                    else -> NetworkType.OFFLINE
                 }
             }
         } catch (e: Exception) {
             XLog.w(TAG, "readNetworkType: 读取网络类型失败", e)
-            NetworkType.UNKNOWN
+            NetworkType.OFFLINE
         }
     }
 

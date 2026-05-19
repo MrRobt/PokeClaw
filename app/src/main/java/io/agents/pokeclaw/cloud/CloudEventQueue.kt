@@ -100,6 +100,12 @@ class CloudEventQueue(context: Context, private val maxSize: Int = DEFAULT_MAX_S
             errorMessage = errorMessage?.take(MAX_TEXT_LENGTH),
             toolCalls = toolCalls?.take(MAX_TEXT_LENGTH),
             evidenceUrls = evidenceUrls?.take(MAX_TEXT_LENGTH),
+            errorCategory = errorCategory?.take(MAX_FIELD_LENGTH),
+            errorCode = errorCode?.take(MAX_FIELD_LENGTH),
+            errorDetail = errorDetail?.take(MAX_TEXT_LENGTH),
+            suggestedAction = suggestedAction?.take(MAX_TEXT_LENGTH),
+            screenshotBase64 = screenshotBase64?.take(MAX_BASE64_LENGTH),
+            logSnippet = logSnippet?.take(MAX_TEXT_LENGTH),
         )
     }
 
@@ -110,6 +116,8 @@ class CloudEventQueue(context: Context, private val maxSize: Int = DEFAULT_MAX_S
         private const val DEFAULT_MAX_SIZE = 100
         private const val DEFAULT_FLUSH_LIMIT = 10
         private const val MAX_TEXT_LENGTH = 2048
+        private const val MAX_FIELD_LENGTH = 128
+        private const val MAX_BASE64_LENGTH = 500000
 
         fun retryDelayMillis(retryCount: Int): Long {
             val safeRetry = retryCount.coerceIn(1, 6)

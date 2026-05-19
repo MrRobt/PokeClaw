@@ -8,18 +8,23 @@
 
 @file:Suppress(
     "ArrayInDataClass",
+    "DuplicatedCode",
     "EnumEntryName",
     "RemoveRedundantQualifierName",
-    "UnusedImport"
+    "RemoveRedundantCallsOfConversionMethods",
+    "REDUNDANT_CALL_OF_CONVERSION_METHOD",
+    "RedundantUnitReturnType",
+    "RemoveEmptyClassBody",
+    "UnnecessaryVariable",
+    "UnusedImport",
+    "UnnecessaryVariable",
+    "unused"
 )
 
 package io.agents.pokeclaw.cloud.model
-
-
 import com.google.gson.annotations.SerializedName
-import android.os.Parcelable
-import kotlinx.parcelize.Parcelize
-import java.io.Serializable
+
+
 
 /**
  * 
@@ -43,9 +48,6 @@ import java.io.Serializable
  * @param retryCount 
  * @param createTime 
  */
-@Parcelize
-
-
 data class DeviceTaskVO (
 
     @SerializedName("id")
@@ -102,10 +104,7 @@ data class DeviceTaskVO (
     @SerializedName("createTime")
     val createTime: java.time.OffsetDateTime? = null
 
-) : Serializable, Parcelable {
-    companion object {
-        private const val serialVersionUID: Long = 123
-    }
+) {
 
     /**
      * 
@@ -113,11 +112,11 @@ data class DeviceTaskVO (
      * Values: PENDING,RUNNING,SUCCESS,FAILED,CANCELLED
      */
     enum class Status(val value: kotlin.String) {
-        @SerializedName(value = "PENDING") PENDING("PENDING"),
-        @SerializedName(value = "RUNNING") RUNNING("RUNNING"),
-        @SerializedName(value = "SUCCESS") SUCCESS("SUCCESS"),
-        @SerializedName(value = "FAILED") FAILED("FAILED"),
-        @SerializedName(value = "CANCELLED") CANCELLED("CANCELLED");
+        @SerializedName("PENDING") PENDING("PENDING"),
+        @SerializedName("RUNNING") RUNNING("RUNNING"),
+        @SerializedName("SUCCESS") SUCCESS("SUCCESS"),
+        @SerializedName("FAILED") FAILED("FAILED"),
+        @SerializedName("CANCELLED") CANCELLED("CANCELLED");
     }
 
 }

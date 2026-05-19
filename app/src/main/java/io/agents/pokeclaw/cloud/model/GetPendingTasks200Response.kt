@@ -8,19 +8,24 @@
 
 @file:Suppress(
     "ArrayInDataClass",
+    "DuplicatedCode",
     "EnumEntryName",
     "RemoveRedundantQualifierName",
-    "UnusedImport"
+    "RemoveRedundantCallsOfConversionMethods",
+    "REDUNDANT_CALL_OF_CONVERSION_METHOD",
+    "RedundantUnitReturnType",
+    "RemoveEmptyClassBody",
+    "UnnecessaryVariable",
+    "UnusedImport",
+    "UnnecessaryVariable",
+    "unused"
 )
 
 package io.agents.pokeclaw.cloud.model
 
 import io.agents.pokeclaw.cloud.model.PendingTaskItem
-
 import com.google.gson.annotations.SerializedName
-import android.os.Parcelable
-import kotlinx.parcelize.Parcelize
-import java.io.Serializable
+
 
 /**
  * 
@@ -28,9 +33,6 @@ import java.io.Serializable
  * @param code 
  * @param `data` 
  */
-@Parcelize
-
-
 data class GetPendingTasks200Response (
 
     @SerializedName("code")
@@ -39,10 +41,7 @@ data class GetPendingTasks200Response (
     @SerializedName("data")
     val `data`: kotlin.collections.List<PendingTaskItem>? = null
 
-) : Serializable, Parcelable {
-    companion object {
-        private const val serialVersionUID: Long = 123
-    }
+) {
 
 
 }

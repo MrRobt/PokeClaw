@@ -8,37 +8,36 @@
 
 @file:Suppress(
     "ArrayInDataClass",
+    "DuplicatedCode",
     "EnumEntryName",
     "RemoveRedundantQualifierName",
-    "UnusedImport"
+    "RemoveRedundantCallsOfConversionMethods",
+    "REDUNDANT_CALL_OF_CONVERSION_METHOD",
+    "RedundantUnitReturnType",
+    "RemoveEmptyClassBody",
+    "UnnecessaryVariable",
+    "UnusedImport",
+    "UnnecessaryVariable",
+    "unused"
 )
 
 package io.agents.pokeclaw.cloud.model
-
-
 import com.google.gson.annotations.SerializedName
-import android.os.Parcelable
-import kotlinx.parcelize.Parcelize
-import java.io.Serializable
+
+
 
 /**
  * 
  *
  * @param status 新状态: 0=离线 1=在线 2=禁用
  */
-@Parcelize
-
-
 data class DeviceUpdateStatusRequest (
 
     /* 新状态: 0=离线 1=在线 2=禁用 */
     @SerializedName("status")
     val status: kotlin.Int
 
-) : Serializable, Parcelable {
-    companion object {
-        private const val serialVersionUID: Long = 123
-    }
+) {
 
 
 }

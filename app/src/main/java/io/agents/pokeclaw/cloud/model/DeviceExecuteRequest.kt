@@ -8,18 +8,23 @@
 
 @file:Suppress(
     "ArrayInDataClass",
+    "DuplicatedCode",
     "EnumEntryName",
     "RemoveRedundantQualifierName",
-    "UnusedImport"
+    "RemoveRedundantCallsOfConversionMethods",
+    "REDUNDANT_CALL_OF_CONVERSION_METHOD",
+    "RedundantUnitReturnType",
+    "RemoveEmptyClassBody",
+    "UnnecessaryVariable",
+    "UnusedImport",
+    "UnnecessaryVariable",
+    "unused"
 )
 
 package io.agents.pokeclaw.cloud.model
+    import com.google.gson.annotations.SerializedName
 
 
-import com.google.gson.annotations.SerializedName
-import android.os.Parcelable
-import kotlinx.parcelize.Parcelize
-import java.io.Serializable
 
 /**
  * 
@@ -27,9 +32,6 @@ import java.io.Serializable
  * @param command 要执行的命令
  * @param mode 执行模式
  */
-@Parcelize
-
-
 data class DeviceExecuteRequest (
 
     /* 要执行的命令 */
@@ -40,10 +42,7 @@ data class DeviceExecuteRequest (
     @SerializedName("mode")
     val mode: DeviceExecuteRequest.Mode? = Mode.TASK
 
-) : Serializable, Parcelable {
-    companion object {
-        private const val serialVersionUID: Long = 123
-    }
+) {
 
     /**
      * 执行模式
@@ -51,8 +50,8 @@ data class DeviceExecuteRequest (
      * Values: TASK,INTERACTIVE
      */
     enum class Mode(val value: kotlin.String) {
-        @SerializedName(value = "TASK") TASK("TASK"),
-        @SerializedName(value = "INTERACTIVE") INTERACTIVE("INTERACTIVE");
+        @SerializedName("TASK") TASK("TASK"),
+        @SerializedName("INTERACTIVE") INTERACTIVE("INTERACTIVE");
     }
 
 }

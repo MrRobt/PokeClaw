@@ -8,18 +8,23 @@
 
 @file:Suppress(
     "ArrayInDataClass",
+    "DuplicatedCode",
     "EnumEntryName",
     "RemoveRedundantQualifierName",
-    "UnusedImport"
+    "RemoveRedundantCallsOfConversionMethods",
+    "REDUNDANT_CALL_OF_CONVERSION_METHOD",
+    "RedundantUnitReturnType",
+    "RemoveEmptyClassBody",
+    "UnnecessaryVariable",
+    "UnusedImport",
+    "UnnecessaryVariable",
+    "unused"
 )
 
 package io.agents.pokeclaw.cloud.model
-
-
 import com.google.gson.annotations.SerializedName
-import android.os.Parcelable
-import kotlinx.parcelize.Parcelize
-import java.io.Serializable
+
+
 
 /**
  * 
@@ -28,9 +33,6 @@ import java.io.Serializable
  * @param msg 提示消息
  * @param `data` 响应数据
  */
-@Parcelize
-
-
 data class CommonResult (
 
     /* 状态码（200=成功） */
@@ -45,10 +47,7 @@ data class CommonResult (
     @SerializedName("data")
     val `data`: kotlin.Any? = null
 
-) : Serializable, Parcelable {
-    companion object {
-        private const val serialVersionUID: Long = 123
-    }
+) {
 
 
 }

@@ -8,18 +8,23 @@
 
 @file:Suppress(
     "ArrayInDataClass",
+    "DuplicatedCode",
     "EnumEntryName",
     "RemoveRedundantQualifierName",
-    "UnusedImport"
+    "RemoveRedundantCallsOfConversionMethods",
+    "REDUNDANT_CALL_OF_CONVERSION_METHOD",
+    "RedundantUnitReturnType",
+    "RemoveEmptyClassBody",
+    "UnnecessaryVariable",
+    "UnusedImport",
+    "UnnecessaryVariable",
+    "unused"
 )
 
 package io.agents.pokeclaw.cloud.model
-
-
 import com.google.gson.annotations.SerializedName
-import android.os.Parcelable
-import kotlinx.parcelize.Parcelize
-import java.io.Serializable
+
+
 
 /**
  * 
@@ -39,9 +44,6 @@ import java.io.Serializable
  * @param skillVersion 技能版本号
  * @param createTime 创建时间
  */
-@Parcelize
-
-
 data class DeviceVO (
 
     /* 主键 ID */
@@ -100,10 +102,7 @@ data class DeviceVO (
     @SerializedName("createTime")
     val createTime: java.time.OffsetDateTime? = null
 
-) : Serializable, Parcelable {
-    companion object {
-        private const val serialVersionUID: Long = 123
-    }
+) {
 
 
 }

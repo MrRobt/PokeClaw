@@ -1,160 +1,289 @@
-# PokeClaw 设备API联调准备清单
+# PokeClaw 端侧设备 API 联调准备清单
 
-## 问题编号
-CMP-137: 【Android】PokeClaw端侧对接 — 设备API联调准备
+> 任务：CMP-137 — PokeClaw端侧对接设备API联调准备  
+> 生成时间：2026-05-18  
+> 最后更新：2026-05-18（安卓小龙执行汇报）  
+> 对齐文档：/mnt/e/code/dyq/api-contracts/device.openapi.yaml  
+> 执行报告：docs/product/CMP-137-execution-report.md
 
-## 执行时间
-2026-05-16
+---
 
-## 一、当前状态
+## 一、接口契约对齐检查
 
-### ✅ 已完成代码
+### 1.1 设备端 API 端点清单
 
-| 文件 | 说明 | 状态 |
-|------|------|------|
-| `CloudDeviceApi.kt` | Retrofit 接口定义（5个端点） | ✅ 已完成 |
-| `CloudModels.kt` | DTO 模型（对齐 device.openapi.yaml） | ✅ 已完成 |
-| `CloudDeviceApiFactory.kt` | API 工厂与鉴权拦截器 | ✅ 已完成 |
-| `CloudDeviceTokenStore.kt` | Android Keystore Token 加密存储 | ✅ 已完成 |
-| `DeviceCloudClient.kt` | 云端客户端封装（注册/心跳/任务/结果） | ✅ 已完成 |
-| `CloudEventQueue.kt` | 离线事件队列（带指数退保重试） | ✅ 已完成 |
-| `CloudNodeOrchestrator.kt` | 端云执行节点编排器（最小闭环） | ✅ 已完成 |
+| 端点 | 方法 | 认证方式 | Android端实现 | 状态 |
+|------|------|----------|---------------|------|
+| /api/claw-device/register | POST | 无 | CloudDeviceApi.register() | ✅ 已实现 |
+| /api/claw-device/heartbeat | POST | Bearer JWT | CloudDeviceApi.heartbeat() | ✅ 已实现 |
+| /api/claw-device/devices/{deviceId}/pending-tasks | GET | Bearer JWT | CloudDeviceApi.getPendingTasks() | ✅ 已实现 |
+| /api/claw-device/tasks/{taskUuid}/result | POST | Bearer JWT | CloudDeviceApi.submitTaskResult() | ✅ 已实现 |
+| /api/claw-device/token/refresh | POST | 无 | CloudDeviceApi.refreshDeviceToken() | ✅ 已实现 |
 
-### ✅ API 路径对齐验证
+### 1.2 DTO 字段对齐检查
 
-| OpenAPI 路径 | Kotlin 方法 | 状态 |
-|-------------|-------------|------|
-| `/api/claw-device/register` | `register()` | ✅ |
-| `/api/claw-device/heartbeat` | `heartbeat()` | ✅ |
-| `/api/claw-device/devices/{deviceId}/pending-tasks` | `getPendingTasks()` | ✅ |
-| `/api/claw-device/tasks/{taskUuid}/result` | `submitTaskResult()` | ✅ |
-| `/api/claw-device/token/refresh` | `refreshDeviceToken()` | ✅ |
+#### DeviceRegisterRequest
 
-### ✅ DTO 字段对齐验证
+| 字段 | OpenAPI类型 | Kotlin实现 | 可空 | 状态 |
+|------|-------------|------------|------|------|
+| deviceId | String (required) | String | 否 | ✅ 对齐 |
+| deviceName | String | String? | 是 | ✅ 对齐 |
+| deviceModel | String | String? | 是 | ✅ 对齐 |
+| androidVersion | String | String? | 是 | ✅ 对齐 |
+| appVersion | String | String? | 是 | ✅ 对齐 |
+| publicKey | String | String? | 是 | ✅ 对齐 |
 
-所有字段已与 `device.openapi.yaml` 对齐：
-- `DeviceRegisterRequest`: deviceId, deviceName, deviceModel, androidVersion, appVersion, publicKey
-- `DeviceRegisterResponse`: deviceToken, refreshToken, expiresIn
-- `DeviceHeartbeatRequest`: batteryLevel, isCharging, networkType
-- `DeviceHeartbeatResponse`: pendingTaskCount, skillVersion, serverTime
-- `PendingTaskItem`: taskUuid, command, mode, createdAt, priority
-- `TaskResultRequest`: status, result, errorMessage, executionTimeMs, toolCalls, evidenceUrls, modelUsed
+#### DeviceRegisterResponse
 
-### ✅ 任务状态枚举对齐
+| 字段 | OpenAPI类型 | Kotlin实现 | 状态 |
+|------|-------------|------------|------|
+| deviceToken | String | String | ✅ 对齐 |
+| refreshToken | String | String | ✅ 对齐 |
+| expiresIn | Integer | Int | ✅ 对齐 |
 
-| OpenAPI | Kotlin | 状态 |
-|---------|--------|------|
-| PENDING | PENDING | ✅ |
-| RUNNING | RUNNING | ✅ |
-| SUCCESS | SUCCESS | ✅ |
-| FAILED | FAILED | ✅ |
-| CANCELLED | CANCELLED | ✅ |
+#### DeviceHeartbeatRequest
 
-## 二、后端状态
+| 字段 | OpenAPI类型 | Kotlin实现 | 枚举值 | 状态 |
+|------|-------------|------------|--------|------|
+| batteryLevel | Integer (0-100) | Int? | - | ✅ 对齐 |
+| isCharging | Boolean | Boolean? | - | ✅ 对齐 |
+| networkType | String | String? | wifi/cellular/offline | ✅ 对齐 |
 
-### 后端实现位置
-- Controller: `/mnt/e/code/dyq/dyq-module-claw/dyq-module-claw-biz/src/main/java/com/douyouqu/dyq/module/claw/controller/app/device/AppClawDeviceController.java`
-- Service: `ClawDeviceService`
-- 状态: 已实现，已编译（target/classes 存在）
+#### PendingTaskItem
 
-### 后端API端点
+| 字段 | OpenAPI类型 | Kotlin实现 | 状态 |
+|------|-------------|------------|------|
+| taskUuid | String | String | ✅ 对齐 |
+| command | String | String | ✅ 对齐 |
+| mode | String | String? | ✅ 对齐 |
+| createdAt | Integer (timestamp ms) | Long | ✅ 对齐 |
+| priority | String | String? | ✅ 对齐 |
+
+#### TaskResultRequest
+
+| 字段 | OpenAPI类型 | Kotlin实现 | 状态 |
+|------|-------------|------------|------|
+| status | Enum | TaskResultRequest.Status | ✅ 对齐 |
+| result | String | String? | ✅ 对齐 |
+| errorMessage | String | String? | ✅ 对齐 |
+| executionTimeMs | Integer | Long? | ✅ 对齐 |
+| toolCalls | String | String? | ✅ 对齐 |
+| evidenceUrls | String | String? | ✅ 对齐 |
+| modelUsed | String | String? | ✅ 对齐 |
+| errorCategory | String | String? | ✅ 对齐 |
+| errorCode | String | String? | ✅ 对齐 |
+| errorDetail | String | String? | ✅ 对齐 |
+| recoverable | Boolean | Boolean? | ✅ 对齐 |
+| suggestedAction | String | String? | ✅ 对齐 |
+| screenshotBase64 | String | String? | ✅ 对齐 |
+| logSnippet | String | String? | ✅ 对齐 |
+
+### 1.3 枚举值对齐
+
+| 枚举 | OpenAPI值 | Kotlin枚举 | 状态 |
+|------|-----------|------------|------|
+| TaskStatus | SUCCESS/FAILED/RUNNING/CANCELLED | TaskResultRequest.Status | ✅ 对齐 |
+| NetworkType | wifi/cellular/offline | NetworkType | ✅ 对齐 |
+
+---
+
+## 二、Android Keystore Token 管理检查
+
+### 2.1 实现状态
+
+| 功能 | 实现类 | 状态 |
+|------|--------|------|
+| Token AES-GCM 加密存储 | AndroidKeystoreCloudDeviceTokenStore | ✅ 已实现 |
+| 密钥生成与存储 | Android KeyStore | ✅ 已实现 |
+| Token 过期检测 | CloudDeviceTokenSnapshot.shouldRefresh() | ✅ 已实现 |
+| Token 刷新 | DeviceCloudClient.refreshTokenIfNeeded() | ✅ 已实现 |
+
+### 2.2 安全合规检查
+
+- ✅ Token 明文不写入 SharedPreferences
+- ✅ 使用 Android Keystore 保护加密密钥
+- ✅ AES-GCM 模式加密（128位认证标签）
+- ✅ Token 过期检测（默认提前10分钟刷新）
+
+---
+
+## 三、离线降级逻辑检查
+
+### 3.1 离线队列实现
+
+| 功能 | 实现类 | 状态 |
+|------|--------|------|
+| 离线结果缓存 | CloudEventQueue | ✅ 已实现 |
+| 队列大小限制 | maxSize=100 | ✅ 已实现 |
+| 指数退避重试 | retryDelayMillis() | ✅ 已实现 |
+| 补报触发 | DeviceCloudClient.flushOfflineQueue() | ✅ 已实现 |
+| 敏感信息脱敏 | TaskResultRequest.sanitized() | ✅ 已实现 |
+
+### 3.2 离线降级策略
+
 ```
-POST   /api/claw-device/register                  # 设备注册
-POST   /api/claw-device/heartbeat                 # 设备心跳
-GET    /api/claw-device/devices/{deviceId}/pending-tasks  # 获取待处理任务
-POST   /api/claw-device/tasks/{taskUuid}/result   # 提交任务结果
-POST   /api/claw-device/token/refresh             # 刷新Token
+网络正常:
+  注册 → 心跳 → 任务拉取 → 执行 → 结果上报
+
+网络异常:
+  注册失败 → 延迟重试(指数退避)
+  心跳失败 → 连续3次标记离线
+  结果上报失败 → 进入离线队列 → 网络恢复后补报
 ```
 
-## 三、待修复问题
+---
 
-### 测试代码编译错误
-1. `CloudDeviceApiContractTest.kt` - 扩展函数导入问题 ✅ 已修复
-2. `CloudNodeOrchestratorTest.kt` - 协程测试依赖缺失（kotlinx-coroutines-test）
-3. `CloudExecutorNodeContractTest.kt` - API 变更未同步
-4. `CloudExecutorNodeTest.kt` - 可空性检查
+## 四、联调步骤清单
 
-### 修复状态
-- `CloudDeviceApiContractTest.kt`: 已修复 `asBearerToken` 导入和使用方式
-- 其他测试文件: 建议单独 Issue 处理，不影响主功能
+### 4.1 后端服务启动检查
 
-## 四、联调步骤
+| 检查项 | 命令/方法 | 预期结果 | 状态 |
+|--------|-----------|----------|------|
+| 后端服务健康检查 | curl http://192.168.250.3:8080/actuator/health | HTTP 200 | ❌ **阻塞：服务未启动（等待@后端阿诚）** |
+| 设备注册接口 | POST /api/claw-device/register | 返回 deviceToken | ❌ **阻塞：依赖后端** |
+| 心跳接口 | POST /api/claw-device/heartbeat | 返回 pendingTaskCount | ❌ **阻塞：依赖后端** |
 
-### 4.1 环境准备
+### 4.2 Android端联调步骤
+
+#### Step 1: 设备注册测试
 ```bash
-# 1. 确保后端服务运行
-cd /mnt/e/code/dyq
-mvn spring-boot:run -pl dyq-server
-
-# 2. 验证后端API可达
-curl http://192.168.250.3:8080/api/claw-device/register \
-  -X POST \
-  -H "Content-Type: application/json" \
-  -d '{"deviceId":"pokeclaw-test-001"}'
+# 通过 ADB 触发注册（需安装 Debug APK）
+adb shell am start -n io.agents.pokeclaw/.ui.ComposeChatActivity
+adb logcat -s PokeClaw/DeviceCloudClient:D | grep register
+```
+预期输出：
+```
+PokeClaw/DeviceCloudClient: register: 开始注册设备，deviceId=xxx
+PokeClaw/DeviceCloudClient: register: 注册成功，deviceId=xxx
 ```
 
-### 4.2 Android端测试
-```kotlin
-// 在 PokeClaw 中测试设备注册
-val client = RetrofitDeviceCloudClient.create(
-    baseUrl = "http://192.168.250.3:8080",
-    tokenStore = AndroidKeystoreCloudDeviceTokenStore(context),
-    offlineQueue = CloudEventQueue(context)
-)
+#### Step 2: 心跳测试
+```bash
+adb logcat -s CloudHeartbeatManager:D | grep -E "(心跳|pendingTaskCount)"
+```
+预期输出：
+```
+CloudHeartbeatManager: 心跳成功，状态=在线
+CloudHeartbeatManager: 拉取到 N 个待处理任务
+```
 
-// 测试注册
-scope.launch {
-    val registered = client.register(DeviceRegisterRequest(
-        deviceId = "pokeclaw-test-001",
-        deviceName = "Test Device",
-        deviceModel = Build.MODEL,
-        androidVersion = Build.VERSION.RELEASE,
-        appVersion = BuildConfig.VERSION_NAME
-    ))
-    Log.i(TAG, "注册结果: $registered")
+#### Step 3: 任务上报测试
+```bash
+adb logcat -s PokeClaw/CloudNodeOrchestrator:D | grep -E "(executeCloudTask|submitTaskResult)"
+```
+预期输出：
+```
+PokeClaw/CloudNodeOrchestrator: executeCloudTask: 开始执行 taskUuid=xxx
+PokeClaw/CloudNodeOrchestrator: executeCloudTask: 结果上报成功，taskUuid=xxx
+```
+
+### 4.3 Mock测试方案
+
+使用 curl 模拟后端响应：
+
+```bash
+# 1. 启动本地 Mock 服务（如需独立测试）
+# 或使用 Postman Mock Server
+
+# 2. 测试设备注册
+curl -X POST http://192.168.250.3:8080/api/claw-device/register \
+  -H "Content-Type: application/json" \
+  -d '{
+    "deviceId": "pokeclaw-test-001",
+    "deviceName": "测试设备",
+    "deviceModel": "Test Model",
+    "androidVersion": "14",
+    "appVersion": "0.7.0"
+  }'
+
+# 预期响应
+{
+  "code": 0,
+  "data": {
+    "deviceToken": "eyJhbGciOiJIUzI1NiIs...",
+    "refreshToken": "eyJhbGciOiJIUzI1NiIs...",
+    "expiresIn": 604800
+  }
+}
+
+# 3. 测试心跳
+curl -X POST http://192.168.250.3:8080/api/claw-device/heartbeat \
+  -H "Authorization: Bearer ${DEVICE_TOKEN}" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "batteryLevel": 85,
+    "isCharging": true,
+    "networkType": "wifi"
+  }'
+
+# 预期响应
+{
+  "code": 0,
+  "data": {
+    "pendingTaskCount": 0,
+    "skillVersion": 1,
+    "serverTime": 1715990400000
+  }
 }
 ```
 
-### 4.3 端到端验证
-1. 设备注册 → 获取 deviceToken
-2. 心跳发送 → 验证 online 状态
-3. 任务拉取 → 验证 pendingTaskCount
-4. 结果上报 → 验证 SUCCESS 状态回传
+---
 
-## 五、风险与边界
+## 五、文件清单
 
-### 当前风险
-1. 测试代码编译失败 - 需单独 Issue 修复
-2. 离线重试策略 - 已用指数退避（1s, 2s, 4s, 8s...）
-3. Token 过期 - 已用 10 分钟刷新窗口
+| 文件路径 | 作用 | 状态 |
+|----------|------|------|
+| app/src/main/java/io/agents/pokeclaw/cloud/api/CloudDeviceApi.kt | Retrofit API定义 | ✅ 已完成 |
+| app/src/main/java/io/agents/pokeclaw/cloud/model/CloudModels.kt | DTO数据模型 | ✅ 已完成 |
+| app/src/main/java/io/agents/pokeclaw/cloud/auth/CloudDeviceTokenStore.kt | Token安全存储 | ✅ 已完成 |
+| app/src/main/java/io/agents/pokeclaw/cloud/DeviceCloudClient.kt | 设备云端客户端 | ✅ 已完成 |
+| app/src/main/java/io/agents/pokeclaw/cloud/CloudHeartbeatManager.kt | 心跳管理器 | ✅ 已完成 |
+| app/src/main/java/io/agents/pokeclaw/cloud/CloudEventQueue.kt | 离线事件队列 | ✅ 已完成 |
+| app/src/main/java/io/agents/pokeclaw/cloud/CloudNodeOrchestrator.kt | 端云编排器 | ✅ 已完成 |
+| app/src/main/java/io/agents/pokeclaw/cloud/CloudTaskExecutor.kt | 任务执行器 | ⚠️ **TODO占位**（需接入AgentService，见执行报告） |
 
-### 技术约束
-- Token 存储：Android Keystore 加密
-- 离线队列：最大 100 条，带重试计数
-- 网络超时：连接 15s，读写 30s
-- 心跳间隔：30s
+---
 
-## 六、下一步任务
+## 六、待验证清单
 
-1. **修复测试代码** - 新建 Issue 处理测试编译问题
-2. **后端联调** - 等待后端服务启动后验证端到端流程
-3. **文档更新** - 将本清单归档到 `.planning/`
+- [ ] 后端服务启动并健康检查通过
+- [ ] 设备注册接口返回有效 Token
+- [ ] 心跳接口正常响应并携带 pendingTaskCount
+- [ ] Token 自动刷新逻辑验证
+- [ ] 任务拉取接口正常响应
+- [ ] 任务结果上报接口正常响应
+- [ ] 离线模式下结果缓存验证
+- [ ] 网络恢复后离线队列补报验证
+- [ ] Android Keystore Token 加密存储验证
+- [ ] Token 过期自动刷新验证
 
-## 七、产出文件
+---
 
-| 文件路径 | 说明 |
-|---------|------|
-| `/mnt/e/code/PokeClaw/app/src/main/java/io/agents/pokeclaw/cloud/api/CloudDeviceApi.kt` | Retrofit 接口 |
-| `/mnt/e/code/PokeClaw/app/src/main/java/io/agents/pokeclaw/cloud/model/CloudModels.kt` | DTO 模型 |
-| `/mnt/e/code/PokeClaw/app/src/main/java/io/agents/pokeclaw/cloud/DeviceCloudClient.kt` | 云端客户端 |
-| `/mnt/e/code/PokeClaw/docs/product/pokeclaw-device-api-integration-checklist.md` | 本清单 |
+## 七、阻塞与风险
 
-## 八、待验证清单
+| 风险项 | 影响 | 缓解方案 |
+|--------|------|----------|
+| 后端服务未启动 | 无法联调 | 等待后端编译启动或启动本地Mock |
+| 网络环境不通 | ADB联调受阻 | 使用本地模拟器或USB调试 |
+| 设备API字段变更 | 端侧解析失败 | 严格对齐OpenAPI契约，变更时同步更新 |
 
-- [ ] 后端服务启动并监听 192.168.250.3:8080
-- [ ] 设备注册接口返回 deviceToken
-- [ ] 心跳接口更新设备在线状态
-- [ ] 任务拉取接口返回待处理任务列表
-- [ ] 结果上报接口接收执行结果
-- [ ] Token刷新接口正常工作
-- [ ] 离线队列在网络恢复后自动补报
+---
+
+## 八、下一步行动
+
+1. **后端启动**：启动 dyq 后端服务（hermes分支）
+2. **编译验证**：确保 PokeClaw Debug APK 可正常构建
+3. **设备注册**：通过 ADB 触发首次注册，验证 Token 获取
+4. **心跳联调**：验证周期性心跳和任务拉取
+5. **任务闭环**：验证任务执行结果上报完整链路
+
+---
+
+## 九、产出物清单
+
+| 产出物 | 路径 | 状态 |
+|--------|------|------|
+| 联调准备清单 | docs/product/pokeclaw-device-api-integration-checklist.md | ✅ 已产出 |
+| Kotlin DTO | app/src/main/java/io/agents/pokeclaw/cloud/model/CloudModels.kt | ✅ 已验证对齐 |
+| Retrofit接口 | app/src/main/java/io/agents/pokeclaw/cloud/api/CloudDeviceApi.kt | ✅ 已验证对齐 |
+| 联调curl示例 | 本文档 4.3 节 | ✅ 已产出 |

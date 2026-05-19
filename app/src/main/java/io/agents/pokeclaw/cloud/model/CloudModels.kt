@@ -4,6 +4,7 @@
 package io.agents.pokeclaw.cloud.model
 
 import com.google.gson.annotations.SerializedName
+import java.io.Serializable
 
 /**
  * 设备注册请求
@@ -120,7 +121,7 @@ data class PendingTaskItem(
  */
 data class TaskResultRequest(
     @SerializedName("status")
-    val status: String,  // SUCCESS, FAILED, RUNNING, CANCELLED
+    val status: Status,  // SUCCESS, FAILED, RUNNING, CANCELLED
 
     @SerializedName("result")
     val result: String? = null,
@@ -161,7 +162,21 @@ data class TaskResultRequest(
 
     @SerializedName("logSnippet")
     val logSnippet: String? = null  // 相关日志片段
-)
+) : Serializable {
+    companion object {
+        private const val serialVersionUID: Long = 124
+    }
+
+    /**
+     * 任务状态枚举
+     */
+    enum class Status(val value: kotlin.String) {
+        @SerializedName(value = "SUCCESS") SUCCESS("SUCCESS"),
+        @SerializedName(value = "FAILED") FAILED("FAILED"),
+        @SerializedName(value = "RUNNING") RUNNING("RUNNING"),
+        @SerializedName(value = "CANCELLED") CANCELLED("CANCELLED");
+    }
+}
 
 /**
  * 通用 API 响应包装

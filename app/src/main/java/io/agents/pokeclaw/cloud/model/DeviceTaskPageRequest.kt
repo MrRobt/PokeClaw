@@ -8,18 +8,23 @@
 
 @file:Suppress(
     "ArrayInDataClass",
+    "DuplicatedCode",
     "EnumEntryName",
     "RemoveRedundantQualifierName",
-    "UnusedImport"
+    "RemoveRedundantCallsOfConversionMethods",
+    "REDUNDANT_CALL_OF_CONVERSION_METHOD",
+    "RedundantUnitReturnType",
+    "RemoveEmptyClassBody",
+    "UnnecessaryVariable",
+    "UnusedImport",
+    "UnnecessaryVariable",
+    "unused"
 )
 
 package io.agents.pokeclaw.cloud.model
-
-
 import com.google.gson.annotations.SerializedName
-import android.os.Parcelable
-import kotlinx.parcelize.Parcelize
-import java.io.Serializable
+
+
 
 /**
  * 
@@ -29,9 +34,6 @@ import java.io.Serializable
  * @param pageNo 
  * @param pageSize 
  */
-@Parcelize
-
-
 data class DeviceTaskPageRequest (
 
     /* 状态筛选: PENDING/RUNNING/SUCCESS/FAILED/CANCELLED */
@@ -48,10 +50,7 @@ data class DeviceTaskPageRequest (
     @SerializedName("pageSize")
     val pageSize: kotlin.Int? = 10
 
-) : Serializable, Parcelable {
-    companion object {
-        private const val serialVersionUID: Long = 123
-    }
+) {
 
 
 }
