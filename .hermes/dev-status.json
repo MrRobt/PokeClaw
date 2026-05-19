@@ -1,0 +1,35 @@
+{
+  "project": "PokeClaw",
+  "branch": "hermes",
+  "last_dev_time": "2026-05-20T00:45:00",
+  "dev_agent": "hermes-kimi-k2.5",
+  "modules": {
+    "agent": {
+      "status": "active",
+      "files": 45
+    },
+    "llm": {
+      "status": "active",
+      "files": 12
+    },
+    "ui": {
+      "status": "active",
+      "files": 35
+    },
+    "cloud": {
+      "status": "integrating",
+      "files": 18
+    },
+    "device": {
+      "status": "integrating",
+      "files": 22
+    }
+  },
+  "total_source_files": 206,
+  "build_status": "ready",
+  "next_tasks": [
+    "完善CloudHeartbeatManager",
+    "优化设备API集成",
+    "增强错误处理机制"
+  ]
+}
