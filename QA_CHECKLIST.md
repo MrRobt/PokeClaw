@@ -6,6 +6,7 @@ Every build must pass ALL checks before shipping.
 
 | 日期 | 状态 | 问题编号 | 描述 |
 |------|------|----------|------|
+| 2026-05-21 | BLOCKED | RE-phase1-unit | 可靠执行内核阶段一：新增动作协议、动作校验、错误分类、执行轨迹最小闭环；已补充 `ActionValidatorTest` 覆盖非法动作拦截、未知工具分类、合法动作执行；本轮 Gradle 验证被既有 cloud/api 编译错误阻塞，详见阶段报告 |
 | 2026-05-18 | PASS | CMP-137 | 【Android】PokeClaw端侧对接 — 设备API联调准备：创建本地Mock服务(scripts/mock-dyq-backend.py)用于后端未启动时的端侧独立验证；完成curl端点测试(5个端点全部通过)；产出Mock联调指南(docs/product/CMP-137-mock-guide.md)；更新验证报告；端侧实现100%完成，等待后端就绪后联调 |
 | 2026-05-17 | PASS | CMP-137 | 【Android】PokeClaw端侧对接 — 设备API联调准备：修复NetworkType枚举对齐device.openapi.yaml规范（移除UNKNOWN），修复CloudHeartbeatManager.getNetworkType()返回值类型，产出联调准备清单文档，提交main分支commit 47e57f0 |
 | 2026-05-17 | PASS | CMP-1964 | PokeClaw端侧执行端心跳与错误上报方案：产出完整方案文档，涵盖心跳机制、错误码体系、离线重试策略、端云字段映射、编排器状态机和待验证清单 |
@@ -799,6 +800,14 @@ Design principle: User perspective. INFO tasks → report actual data. ACTION ta
 - [ ] **M48. Lock**: "lock my phone" → system_key(lock), confirms
 - [ ] **M49. Clear notifications**: "clear all my notifications" → clears, confirms
 - [ ] **M50. Phone temp**: "how hot is my phone" → get_device_info(battery) temp OR graceful "not available"
+
+## RE. 可靠执行内核专项
+
+- [ ] **RE1. 结构化动作非法格式拦截**: 通过单元测试或调试入口下发缺少必填参数的工具动作 → `ActionValidator` 返回 `INVALID_ACTION` → 真实 `BaseTool.execute()` 调用次数为 0。
+- [ ] **RE2. 未知工具标准分类**: 下发不存在的工具名 → `ToolRegistry.executeTool()` 不执行真实工具 → `ToolResult.errorType = UNKNOWN_TOOL`。
+- [ ] **RE3. 工具异常标准分类**: 构造会抛异常的工具或触发真实工具异常 → `ToolResult.errorType = TOOL_EXCEPTION` → logcat 有 `ExecutionTrace ACTION_RESULT`。
+- [ ] **RE4. 一次任务动作轨迹闭环**: 通过 ADB 发送 `how much battery left` → logcat 可见 `ExecutionTrace startTask`、`ACTION_VALIDATION`、`ACTION_EXECUTION_START`、`ACTION_RESULT`、`finishTask` 摘要。
+- [ ] **RE5. 失败轨迹可复盘**: 通过 ADB 发送缺权限或目标不存在任务 → 用户可见失败消息，logcat 摘要包含 `failed` 和标准 `errorType`。
 
 ## R. Local LLM — Reasoning Quick Tasks (1-2 tool calls + LLM analysis)
 

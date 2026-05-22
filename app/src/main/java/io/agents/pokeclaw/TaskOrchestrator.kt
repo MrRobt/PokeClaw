@@ -14,6 +14,7 @@ import io.agents.pokeclaw.channel.Channel
 import io.agents.pokeclaw.channel.ChannelManager
 import io.agents.pokeclaw.floating.FloatingCircleManager
 import io.agents.pokeclaw.service.ClawAccessibilityService
+import io.agents.pokeclaw.reliability.trace.ExecutionTrace
 import io.agents.pokeclaw.service.ForegroundService
 import io.agents.pokeclaw.tool.ToolResult
 import io.agents.pokeclaw.utils.XLog
@@ -135,6 +136,7 @@ class TaskOrchestrator(
         }
 
         ForegroundService.updateTaskStatus(ClawApplication.instance, "Preparing task...")
+        ExecutionTrace.startTask(task, messageID)
 
         // Tier 1: Deterministic routing
         val route = pipelineRouter.route(task)
@@ -143,6 +145,7 @@ class TaskOrchestrator(
                 XLog.i(TAG, "Pipeline Tier 1: DirectIntent — ${route.description}")
                 pipelineRouter.executeIntent(route.intent)
                 XLog.i(TAG, "onComplete: rounds=0, totalTokens=0, model=direct, answer=${route.description}")
+                ExecutionTrace.finishTask("success", route.description)
                 taskEventCallback?.invoke(TaskEvent.Completed(route.description))
                 ChannelManager.sendMessage(channel, "✓ ${route.description}", messageID)
                 releaseTask()
@@ -155,9 +158,10 @@ class TaskOrchestrator(
                 XLog.i(TAG, "Pipeline Tier 1: DirectTool — ${route.toolName}")
                 Thread({
                     var success = false
-                    val answer = try {
+                    var answer = ""
+                    try {
                         val toolResult = pipelineRouter.executeTool(route.toolName, route.params)
-                        if (!toolResult.isSuccess) {
+                        answer = if (!toolResult.isSuccess) {
                             val error = toolResult.error ?: "Unknown error"
                             XLog.w(TAG, "Tier 1 tool failed: $error")
                             taskEventCallback?.invoke(TaskEvent.Completed("Failed: ${route.description}"))
@@ -174,8 +178,9 @@ class TaskOrchestrator(
                         XLog.e(TAG, "Tier 1 tool crashed: ${route.toolName}", e)
                         taskEventCallback?.invoke(TaskEvent.Failed(message))
                         ChannelManager.sendMessage(channel, "✗ ${route.description}: $message", messageID)
-                        "Failed: ${route.description}: $message"
+                        answer = "Failed: ${route.description}: $message"
                     } finally {
+                        ExecutionTrace.finishTask(if (success) "success" else "failed", answer)
                         releaseTask()
                         ForegroundService.resetToIdle(ClawApplication.instance)
                         if (success) {
@@ -349,6 +354,7 @@ class TaskOrchestrator(
                         ChannelManager.flushMessages(cancelledSession.channel)
                     }
                     FloatingCircleManager.setErrorState()
+                    ExecutionTrace.finishTask("cancelled", finalAnswer)
                     onTaskFinished()
                     XLog.d(TAG, "Current task cancelled by user")
                     return
@@ -363,6 +369,7 @@ class TaskOrchestrator(
                 val completedSession = releaseTask()
                 ChannelManager.flushMessages(completedSession.channel ?: channel)
                 FloatingCircleManager.setSuccessState()
+                ExecutionTrace.finishTask("success", answer)
                 // Auto-return to PokeClaw after in-app task completes
                 if (completedSession.autoReturnToChat) {
                     XLog.i(TAG, "onComplete: auto-returning to PokeClaw chatroom")
@@ -395,6 +402,7 @@ class TaskOrchestrator(
                 )
                 ChannelManager.flushMessages(failedChannel)
                 FloatingCircleManager.setErrorState()
+                ExecutionTrace.finishTask("failed", error.message ?: "Unknown error")
                 onTaskFinished()
             }
 
@@ -423,6 +431,7 @@ class TaskOrchestrator(
                     XLog.e(TAG, "Failed to send screenshot for system dialog", e)
                 }
                 FloatingCircleManager.setErrorState()
+                ExecutionTrace.finishTask("blocked", "system dialog blocked")
                 onTaskFinished()
             }
         })

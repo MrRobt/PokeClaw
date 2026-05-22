@@ -17,6 +17,7 @@ app = Flask(__name__)
 devices = {}  # deviceId -> device_info
 tasks = {}    # taskUuid -> task_info
 tokens = {}   # deviceToken -> deviceId
+experiences = []  # 端侧经验上报样本
 
 # 模拟配置
 MOUSE_DEVICE_TOKEN = "mock-device-token-" + str(uuid.uuid4())[:8]
@@ -102,11 +103,16 @@ def device_heartbeat():
             task_uuid = str(uuid.uuid4())
             tasks[task_uuid] = {
                 "uuid": task_uuid,
+                "taskUuid": task_uuid,
                 "deviceId": device_id,
                 "type": "SIMPLE_ACTION",
+                "command": "打开设置查看电量",
+                "mode": "TASK",
                 "payload": {"action": "open_app", "packageName": "com.android.settings"},
                 "status": "PENDING",
-                "createdAt": datetime.now().isoformat()
+                "priority": "NORMAL",
+                "createdAt": int(time.time() * 1000),
+                "createdAtIso": datetime.now().isoformat()
             }
             pending_count = 1
         
@@ -132,6 +138,12 @@ def get_pending_tasks(device_id):
         # 返回该设备的待处理任务
         device_tasks = [
             {
+                # 端侧 PendingTaskItem 读取字段
+                "taskUuid": t.get('taskUuid', t['uuid']),
+                "command": t.get('command', '打开设置查看电量'),
+                "mode": t.get('mode', 'TASK'),
+                "priority": t.get('priority', 'NORMAL'),
+                # 兼容旧 mock 字段，便于历史脚本继续读取
                 "uuid": t['uuid'],
                 "type": t['type'],
                 "payload": t['payload'],
@@ -172,6 +184,47 @@ def submit_task_result(task_uuid):
         return make_response(code=500, msg=f"上报结果失败: {str(e)}")
 
 
+@app.route('/api/claw-device/experiences/report', methods=['POST'])
+def report_experience():
+    """提交端侧经验样本，用于无真机替代证据包。"""
+    try:
+        auth_header = request.headers.get('Authorization', '')
+        if not auth_header.startswith('Bearer '):
+            return make_response(code=401, msg="缺少有效令牌")
+
+        token = auth_header[7:]
+        device_id = tokens.get(token)
+        if not device_id:
+            return make_response(code=401, msg="令牌无效")
+
+        body = request.get_json() or {}
+        experience_id = "exp-" + str(uuid.uuid4())[:8]
+        record = {
+            "experienceId": experience_id,
+            "deviceId": device_id,
+            "taskUuid": body.get("taskUuid"),
+            "lessonType": body.get("lessonType", "TASK_EXECUTION"),
+            "outcome": body.get("outcome", "SUCCESS"),
+            "summary": body.get("summary"),
+            "metrics": body.get("metrics", {}),
+            "evidenceRefs": body.get("evidenceRefs", []),
+            "reportedAt": datetime.now().isoformat()
+        }
+        experiences.append(record)
+
+        print(f"[经验上报] 设备: {device_id}, 经验: {experience_id}, 任务: {record['taskUuid']}")
+
+        return make_response(data={
+            "experienceId": experience_id,
+            "received": True,
+            "deviceId": device_id,
+            "taskUuid": record["taskUuid"]
+        })
+    except Exception as e:
+        print(f"[经验上报错误] {e}")
+        return make_response(code=500, msg=f"经验上报失败: {str(e)}")
+
+
 @app.route('/api/claw-device/token/refresh', methods=['POST'])
 def refresh_token():
     """刷新令牌"""
@@ -201,6 +254,7 @@ def get_status():
     return jsonify({
         "devices": len(devices),
         "tasks": len(tasks),
+        "experiences": len(experiences),
         "device_list": list(devices.keys())
     })
 
@@ -214,6 +268,7 @@ if __name__ == '__main__':
     print("  POST /api/claw-device/heartbeat      - 设备心跳")
     print("  GET  /api/claw-device/devices/{id}/pending-tasks - 拉取任务")
     print("  POST /api/claw-device/tasks/{uuid}/result - 上报结果")
+    print("  POST /api/claw-device/experiences/report - 经验上报样本")
     print("  POST /api/claw-device/token/refresh  - 刷新令牌")
     print("  GET  /actuator/health                - 健康检查")
     print("  GET  /api/status                     - Mock状态")
