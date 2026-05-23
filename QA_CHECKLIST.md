@@ -6,6 +6,7 @@ Every build must pass ALL checks before shipping.
 
 | 日期 | 状态 | 问题编号 | 描述 |
 |------|------|----------|------|
+| 2026-05-23 | FIXED | DYQ-3 | 【Android】修复cloud模块编译错误：区分OkHttp Response.code属性与Retrofit Response.code()方法；4个文件修复，BUILD SUCCESSFUL in 9m35s
 | 2026-05-23 | BLOCKED | DYQ-3 | 【Android】PokeClaw端侧执行链路商业化验收：Mock UP/后端DOWN/DYQ-68仍blocked(2026-05-23T00:27:10Z)；端侧就绪等待阻塞解除
 | 2026-05-23 | FIXED | DYQ-3 | 【Android】RetrofitDeviceCloudClient.kt编译错误修复：7处`response.code`改为`response.code()`；OkHttp Response使用code()方法而非属性；Android编译通过验证
 | 2026-05-23 | PASS | DYQ-3 | 【Android】PokeClaw端侧执行链路商业化验收：Z1-Z8 Mock验收测试全部通过(38个测试用例)，5个API端点验证完成；真实后端仍阻塞；QA_CHECKLIST.md Z章节已产出；等待CMP-1813/CMP-1818就绪后执行Z9 |
