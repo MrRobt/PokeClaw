@@ -22,3 +22,7 @@ CLAUDE.local.md
 thoughts/
 .claudeignore
 /.kotlin/
+
+# Build artifacts and runtime outputs
+/artifacts/
+/scripts/__pycache__/

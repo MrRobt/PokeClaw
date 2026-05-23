@@ -76,7 +76,7 @@ class CloudClient private constructor(context: Context) {
 
                 // 添加 Device Token（如果存在）
                 val token = tokenManager.getDeviceToken()
-                if (token != null && shouldAddAuth(request.url().toString())) {
+                if (token != null && shouldAddAuth(request.url.toString())) {
                     builder.addHeader("Authorization", "Bearer $token")
                     XLog.d(TAG, "添加认证头: Bearer ${token.take(20)}...")
                 }
@@ -85,7 +85,7 @@ class CloudClient private constructor(context: Context) {
                 val response = chain.proceed(newRequest)
 
                 // 处理 401 未认证
-                if (response.code() == 401) {
+                if (response.code == 401) {
                     XLog.w(TAG, "收到 401 未认证响应，需要刷新Token")
                     _connectionState.value = ConnectionState.AUTH_FAILED
                 }
@@ -121,7 +121,7 @@ class CloudClient private constructor(context: Context) {
                 val body = response.body()
                 if (body?.data != null) {
                     tokenManager.saveDeviceToken(
-                        body.data.deviceToken ?: "",
+                        body.data.deviceToken,
                         body.data.expiresIn ?: 604800
                     )
                     XLog.i(TAG, "Token 刷新成功")
@@ -132,8 +132,8 @@ class CloudClient private constructor(context: Context) {
                     false
                 }
             } else {
-                XLog.e(TAG, "Token 刷新失败: ${response.code()}")
-                if (response.code() == 401) {
+                XLog.e(TAG, "Token 刷新失败: ${response.code}")
+                if (response.code == 401) {
                     // refreshToken 也过期了，需要重新注册
                     tokenManager.clearTokens()
                 }

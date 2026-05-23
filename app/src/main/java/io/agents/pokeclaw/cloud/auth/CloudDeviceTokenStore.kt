@@ -34,6 +34,30 @@ interface CloudDeviceTokenStore {
     fun updateDeviceToken(deviceToken: String, expiresInSeconds: Int, nowMillis: Long = System.currentTimeMillis())
     fun snapshot(): CloudDeviceTokenSnapshot?
     fun clear()
+
+    // 便捷方法，用于兼容 RetrofitDeviceCloudClient
+    fun saveDeviceToken(token: String, expiresInSeconds: Long) {
+        val snapshot = snapshot()
+        val refreshToken = snapshot?.refreshToken ?: ""
+        saveTokens(token, refreshToken, expiresInSeconds.toInt(), System.currentTimeMillis())
+    }
+
+    fun saveRefreshToken(token: String) {
+        val snapshot = snapshot()
+        val deviceToken = snapshot?.deviceToken ?: ""
+        val expiresAt = snapshot?.expiresAtMillis ?: (System.currentTimeMillis() + 604800000)
+        val expiresInSeconds = ((expiresAt - System.currentTimeMillis()) / 1000).toInt()
+        saveTokens(deviceToken, token, expiresInSeconds.coerceAtLeast(0), System.currentTimeMillis())
+    }
+
+    fun getDeviceToken(): String? = snapshot()?.deviceToken
+    fun getRefreshToken(): String? = snapshot()?.refreshToken
+
+    fun shouldRefreshToken(nowMillis: Long = System.currentTimeMillis()): Boolean {
+        return snapshot()?.shouldRefresh(nowMillis) ?: false
+    }
+
+    fun clearTokens() = clear()
 }
 
 /**
