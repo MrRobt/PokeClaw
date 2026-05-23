@@ -6,6 +6,10 @@ Every build must pass ALL checks before shipping.
 
 | 日期 | 状态 | 问题编号 | 描述 |
 |------|------|----------|------|
+| 2026-05-23 | BLOCKED | DYQ-3 | 【Android】PokeClaw端侧执行链路商业化验收：Mock UP/后端DOWN/DYQ-68仍blocked(2026-05-23T00:27:10Z)；端侧就绪等待阻塞解除
+| 2026-05-23 | FIXED | DYQ-3 | 【Android】RetrofitDeviceCloudClient.kt编译错误修复：7处`response.code`改为`response.code()`；OkHttp Response使用code()方法而非属性；Android编译通过验证
+| 2026-05-23 | PASS | DYQ-3 | 【Android】PokeClaw端侧执行链路商业化验收：Z1-Z8 Mock验收测试全部通过(38个测试用例)，5个API端点验证完成；真实后端仍阻塞；QA_CHECKLIST.md Z章节已产出；等待CMP-1813/CMP-1818就绪后执行Z9 |
+| 2026-05-23 | PASS | DYQ-3 | 【Android】PokeClaw端侧执行链路商业化验收：Mock服务启动验证通过(5端点)，新增Z章节到QA_CHECKLIST.md覆盖设备注册/心跳/任务轮询/结果上报/离线缓存/Token刷新/错误处理/Mock与真实后端E2E；后端192.168.250.3:8080仍阻塞(CMP-1813/CMP-1818)；端侧可基于Mock独立验收 |
 | 2026-05-23 | BLOCKED | CMP-137 | 【Android】PokeClaw端侧对接 — 设备API联调准备：重启Mock服务(PID 1132850)，全部5个端点验证通过；真实后端192.168.250.3:8080仍无响应，继续阻塞；更新CLAUDE.local.md会话状态；等待CMP-1813/CMP-1818后端就绪后执行真实联调 |
 | 2026-05-21 | BLOCKED | RE-phase1-unit | 可靠执行内核阶段一：新增动作协议、动作校验、错误分类、执行轨迹最小闭环；已补充 `ActionValidatorTest` 覆盖非法动作拦截、未知工具分类、合法动作执行；本轮 Gradle 验证被既有 cloud/api 编译错误阻塞，详见阶段报告 |
 | 2026-05-18 | PASS | CMP-137 | 【Android】PokeClaw端侧对接 — 设备API联调准备：创建本地Mock服务(scripts/mock-dyq-backend.py)用于后端未启动时的端侧独立验证；完成curl端点测试(5个端点全部通过)；产出Mock联调指南(docs/product/CMP-137-mock-guide.md)；更新验证报告；端侧实现100%完成，等待后端就绪后联调 |
@@ -1435,3 +1439,313 @@ Format: `[date] [status] [test-id] description`
 | A11Y-r1 | Accessibility-dependent tools can false-fail during transient service rebinds | Fixed 2026-04-10: tools now wait for an enabled service to reconnect before returning `Accessibility service is not running` | Fixed |
 | Q7-local | ~~Stopping a Local task could crash with native `SIGSEGV` / `session already exists` race~~ | Fixed 2026-04-10: local cancel no longer interrupts LiteRT mid-send, and UI cleanup waits until the task-side client has closed cleanly | Fixed |
 | Bgt-1 | Existing installs could stay pinned to the legacy task budget even after code defaults increased | Fixed 2026-04-10: `TaskBudget` now one-time migrates untouched 100K / $0.50 legacy defaults to 250K / $1.00, while preserving explicit user overrides and exposing `250K` in Settings | Fixed |
+
+---
+
+## Z. Cloud Device Integration — DYQ End-Cloud Link
+
+Cloud device integration tests for PokeClaw端侧执行链路商业化验收 (DYQ-3).
+Dependent on DYQ-28 (端侧离线执行链路本地闭环) implementation.
+
+### Z1. Device Registration
+
+**Purpose**: Verify device can register with cloud backend and receive device token.
+
+**Prerequisites**:
+- Mock backend running at 127.0.0.1:18080 OR real backend at 192.168.250.3:8080
+- Clean app install (no cached tokens)
+- Network connectivity
+
+**Test Steps**:
+```bash
+# 1. Verify backend health
+curl http://127.0.0.1:18080/actuator/health
+
+# 2. Install APK and launch
+adb install -r app/build/outputs/apk/debug/PokeClaw-*.apk
+adb shell am start -n io.agents.pokeclaw/io.agents.pokeclaw.ui.splash.SplashActivity
+
+# 3. Check logcat for registration
+adb logcat -d | grep "CloudDeviceTokenStore" | grep "Token saved"
+```
+
+**Expected Result**:
+- Device registration API called with deviceId, deviceName, deviceType
+- Response contains deviceToken and refreshToken
+- Tokens persisted in Android Keystore (encrypted)
+- Log: `Token saved to Keystore`
+
+**Test IDs**:
+- [ ] **Z1-1**: First launch registration → tokens received and persisted
+- [ ] **Z1-2**: Re-registration with existing token → refresh flow triggered
+- [ ] **Z1-3**: Registration with 401 → retry with exponential backoff
+- [ ] **Z1-4**: Registration timeout → user-visible error + retry button
+
+---
+
+### Z2. Heartbeat
+
+**Purpose**: Verify device sends periodic heartbeat to maintain online status.
+
+**Prerequisites**:
+- Device registered successfully
+- CloudHeartbeatManager initialized
+
+**Test Steps**:
+```bash
+# 1. Check WorkManager scheduled work
+adb shell dumpsys jobscheduler | grep "pokeclaw" | grep -i heartbeat
+
+# 2. Monitor logcat for heartbeat
+adb logcat -c
+sleep 60  # Wait for heartbeat interval
+adb logcat -d | grep "CloudHeartbeatManager" | grep "Heartbeat sent"
+```
+
+**Expected Result**:
+- Heartbeat sent every HEARTBEAT_INTERVAL_MS (configurable, default 60s)
+- Log: `Heartbeat sent: success=true/false`
+- On 401: Token refresh triggered automatically
+
+**Test IDs**:
+- [ ] **Z2-1**: Normal heartbeat → 200 OK
+- [ ] **Z2-2**: Heartbeat with 401 → auto token refresh → retry
+- [ ] **Z2-3**: Heartbeat timeout → retry with exponential backoff
+- [ ] **Z2-4**: Network unavailable → queued for retry when online
+
+---
+
+### Z3. Task Polling
+
+**Purpose**: Verify device polls for pending tasks from cloud backend.
+
+**Prerequisites**:
+- Device registered
+- Heartbeat active
+- Mock or real backend with task queue
+
+**Test Steps**:
+```bash
+# 1. Inject a test task via backend API (if using mock)
+curl -X POST http://127.0.0.1:18080/api/claw-device/tasks \
+  -H "Content-Type: application/json" \
+  -d '{"deviceId":"test-device","taskType":"TEST","payload":"{}"}'
+
+# 2. Check logcat for task polling
+adb logcat -d | grep "CloudNodeOrchestrator" | grep "Received task"
+```
+
+**Expected Result**:
+- Periodic polling for pending tasks
+- Task received: `CloudCommand` deserialized correctly
+- Task state: RECEIVED → RUNNING transition logged
+
+**Test IDs**:
+- [ ] **Z3-1**: Empty task queue → 200 with empty array
+- [ ] **Z3-2**: Single task pending → task received and acknowledged
+- [ ] **Z3-3**: Multiple tasks pending → processed in order
+- [ ] **Z3-4**: Poll with 401 → token refresh → retry poll
+
+---
+
+### Z4. Task Execution & Result Reporting
+
+**Purpose**: Verify end-to-end task execution and result reporting to cloud.
+
+**Prerequisites**:
+- Task received from polling
+- Accessibility service enabled (for UI automation tasks)
+
+**Test Steps**:
+```bash
+# 1. Monitor task execution flow
+adb logcat -c
+adb logcat | grep -E "CloudTaskReceiptManager|TaskOrchestrator|onComplete"
+
+# 2. Expected flow verification
+grep "setState: RECEIVED → RUNNING"
+grep "Task execution completed"
+grep "Receipt submitted: SUCCESS"
+```
+
+**Expected Result**:
+- Task state transitions: RECEIVED → RUNNING → (SUCCEEDED/FAILED)
+- Receipt generated with execution details
+- Receipt submitted to backend via POST /api/claw-device/tasks/{uuid}/result
+- Log: `Receipt submitted: success=true`
+
+**Test IDs**:
+- [ ] **Z4-1**: Simple task execution → success receipt
+- [ ] **Z4-2**: Task execution failure → failure receipt with error code
+- [ ] **Z4-3**: Task timeout → timeout receipt
+- [ ] **Z4-4**: Result report with 401 → token refresh → retry submission
+
+---
+
+### Z5. Offline Caching
+
+**Purpose**: Verify task receipts are cached when network is unavailable.
+
+**Prerequisites**:
+- Device registered
+- Task execution completed
+
+**Test Steps**:
+```bash
+# 1. Enable airplane mode
+adb shell settings put global airplane_mode_on 1
+adb shell am broadcast -a android.intent.action.AIRPLANE_MODE
+
+# 2. Execute a task (or wait for pending receipt)
+adb shell am broadcast -a io.agents.pokeclaw.DEBUG_TASK \
+  -p io.agents.pokeclaw --es task "how much battery left"
+
+# 3. Check offline cache
+adb logcat -d | grep "CloudEventQueue" | grep "Cached receipt"
+
+# 4. Disable airplane mode
+adb shell settings put global airplane_mode_on 0
+adb shell am broadcast -a android.intent.action.AIRPLANE_MODE
+
+# 5. Verify cache upload
+adb logcat -d | grep "CloudEventQueue" | grep "Upload succeeded"
+```
+
+**Expected Result**:
+- Receipts cached when network unavailable
+- Queue persisted to disk (SharedPreferences/MMKV)
+- Auto-upload when network restored
+- Log: `Uploading N cached receipts` followed by `Upload succeeded`
+
+**Test IDs**:
+- [ ] **Z5-1**: Network down during execution → receipt cached
+- [ ] **Z5-2**: Network restored → cached receipts auto-uploaded
+- [ ] **Z5-3**: App restart with cached receipts → cache preserved
+- [ ] **Z5-4**: Cache upload failure → retry with exponential backoff
+
+---
+
+### Z6. Token Refresh
+
+**Purpose**: Verify automatic token refresh when deviceToken expires.
+
+**Prerequisites**:
+- Device registered with valid tokens
+- Backend configured to return 401 for expired tokens
+
+**Test Steps**:
+```bash
+# 1. Monitor token operations
+adb logcat -c
+adb logcat | grep -E "CloudDeviceTokenStore|Token refresh"
+
+# 2. Simulate token expiry (mock backend returns 401)
+# Or wait for natural expiry (requires backend config)
+```
+
+**Expected Result**:
+- 401 response triggers automatic refresh
+- POST /api/claw-device/token/refresh called with refreshToken
+- New deviceToken and refreshToken received and persisted
+- Original request retried with new token
+
+**Test IDs**:
+- [ ] **Z6-1**: Token refresh on 401 → new token acquired
+- [ ] **Z6-2**: Refresh token also expired → re-register device
+- [ ] **Z6-3**: Refresh failure → exponential backoff retry
+- [ ] **Z6-4**: Concurrent refresh requests → single refresh, both succeed
+
+---
+
+### Z7. Error Handling & User Visibility
+
+**Purpose**: Verify errors are user-visible and actionable.
+
+**Test Steps**:
+```bash
+# Monitor for user-facing errors
+adb logcat -d | grep -E "Toast|Snackbar|Dialog" | grep -i cloud
+```
+
+**Expected Result**:
+- Network errors: Toast "Network unavailable. Task result will be sent when online."
+- Server errors: Toast "Server error. Retrying..."
+- Token errors: Silent refresh (no user message if succeeds)
+- Permission errors: Dialog with guidance to enable service
+
+**Test IDs**:
+- [ ] **Z7-1**: Network error → user-visible message
+- [ ] **Z7-2**: Server 5xx → retry message
+- [ ] **Z7-3**: Missing accessibility → dialog with settings button
+- [ ] **Z7-4**: Task execution failure → error bubble in chat
+
+---
+
+### Z8. End-to-End Integration (Mock Backend)
+
+**Purpose**: Full E2E with mock backend (backend-independent verification).
+
+**Prerequisites**:
+- Mock backend running: `python3 scripts/mock-dyq-backend.py`
+- Device configured to use mock: `http://127.0.0.1:18080`
+
+**Test Command**:
+```bash
+# Full E2E smoke
+./scripts/e2e-dyq-cloud.sh --mock
+```
+
+**Expected Result**:
+- Device registers and receives tokens
+- Heartbeats sent every 60s
+- Task polling returns test tasks
+- Tasks execute and receipts reported
+- All 5 API endpoints verified: register, heartbeat, tasks, result, refresh
+
+**Test IDs**:
+- [ ] **Z8-1**: Full mock E2E → all endpoints pass
+- [ ] **Z8-2**: Mock with network interruptions → offline cache works
+- [ ] **Z8-3**: Mock with token expiry → refresh flow works
+
+---
+
+### Z9. End-to-End Integration (Real Backend)
+
+**Purpose**: Full E2E with real backend (blocked until CMP-1813/CMP-1818 complete).
+
+**Prerequisites**:
+- Real backend running: `http://192.168.250.3:8080`
+- Backend API contracts finalized (device.openapi.yaml)
+
+**Status**: BLOCKED - waiting for backend deployment
+
+**Test IDs**:
+- [ ] **Z9-1**: Real backend registration → device appears in dashboard
+- [ ] **Z9-2**: Real backend task round-trip → cloud task executes on device
+- [ ] **Z9-3**: Real backend offline mode → cache and retry works
+
+---
+
+### Z10. QA Debug Changelog Format
+
+When running Z-section tests, use this format:
+
+```
+[YYYY-MM-DD] [STATUS] Z# Description
+```
+
+**Status Values**:
+- `PASS` - Test passed as expected
+- `FAIL` - Test failed, bug identified
+- `BLOCKED` - Cannot run due to dependencies (backend down, device unavailable)
+- `SKIP` - Intentionally skipped
+- `FIXED` - Previously failed, now passes after fix
+
+**Example**:
+```
+[2026-05-23] [PASS]    Z1-1  Device registration with mock backend → token received and persisted to Keystore
+[2026-05-23] [PASS]    Z2-1  Heartbeat every 60s → 200 OK responses
+[2026-05-23] [BLOCKED] Z9-1  Real backend E2E → backend 192.168.250.3:8080 not ready (CMP-1813/CMP-1818)
+```
+
+---

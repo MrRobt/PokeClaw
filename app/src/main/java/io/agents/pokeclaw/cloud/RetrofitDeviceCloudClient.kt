@@ -122,7 +122,7 @@ class RetrofitDeviceCloudClient(
                         false
                     }
                 } else {
-                    XLog.e(TAG, "register: 注册失败，code=${response.code}")
+                    XLog.e(TAG, "register: 注册失败，code=${response.code()}")
                     false
                 }
             } catch (e: Exception) {
@@ -149,7 +149,7 @@ class RetrofitDeviceCloudClient(
                         false
                     }
                 } else {
-                    XLog.w(TAG, "sendHeartbeat: 心跳失败，code=${response.code}")
+                    XLog.w(TAG, "sendHeartbeat: 心跳失败，code=${response.code()}")
                     false
                 }
             } catch (e: Exception) {
@@ -172,7 +172,7 @@ class RetrofitDeviceCloudClient(
                     XLog.i(TAG, "getPendingTasks: 拉取到 ${tasks.size} 个任务")
                     tasks
                 } else {
-                    XLog.w(TAG, "getPendingTasks: 拉取失败，code=${response.code}")
+                    XLog.w(TAG, "getPendingTasks: 拉取失败，code=${response.code()}")
                     emptyList()
                 }
             } catch (e: Exception) {
@@ -192,7 +192,7 @@ class RetrofitDeviceCloudClient(
                     XLog.i(TAG, "submitTaskResult: 提交成功，taskUuid=$taskUuid")
                     true
                 } else {
-                    XLog.w(TAG, "submitTaskResult: 提交失败，code=${response.code}")
+                    XLog.w(TAG, "submitTaskResult: 提交失败，code=${response.code()}")
                     // 进入离线队列
                     offlineQueue.enqueue(taskUuid, request)
                     false
@@ -237,8 +237,8 @@ class RetrofitDeviceCloudClient(
                         false
                     }
                 } else {
-                    XLog.e(TAG, "refreshTokenIfNeeded: Token刷新失败，code=${response.code}")
-                    if (response.code == 401) {
+                    XLog.e(TAG, "refreshTokenIfNeeded: Token刷新失败，code=${response.code()}")
+                    if (response.code() == 401) {
                         // refreshToken 也过期了，清除令牌
                         tokenStore.clearTokens()
                     }
@@ -269,7 +269,7 @@ class RetrofitDeviceCloudClient(
                     XLog.i(TAG, "flushOfflineQueue: 补报成功，requestId=${event.requestId}")
                 } else {
                     offlineQueue.markFailed(event.requestId, nowMillis)
-                    XLog.w(TAG, "flushOfflineQueue: 补报失败，code=${response.code}")
+                    XLog.w(TAG, "flushOfflineQueue: 补报失败，code=${response.code()}")
                 }
             } catch (e: Exception) {
                 offlineQueue.markFailed(event.requestId, nowMillis)

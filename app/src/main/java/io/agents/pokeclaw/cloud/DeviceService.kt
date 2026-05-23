@@ -157,7 +157,7 @@ class DeviceService private constructor(context: Context) {
                 }
             } else {
                 _serviceState.value = ServiceState.ERROR
-                Result.failure(IllegalStateException("注册失败: ${response.code}"))
+                Result.failure(IllegalStateException("注册失败: ${response.code()}"))
             }
         } catch (e: Exception) {
             _serviceState.value = ServiceState.OFFLINE
@@ -204,14 +204,14 @@ class DeviceService private constructor(context: Context) {
                 }
             } else {
                 // Token过期，尝试刷新
-                if (response.code == 401 && tokenManager.shouldRefreshToken()) {
+                if (response.code() == 401 && tokenManager.shouldRefreshToken()) {
                     val refreshed = cloudClient.tryRefreshToken()
                     if (refreshed) {
                         // 重试心跳
                         return sendHeartbeat(batteryLevel, isCharging, networkType)
                     }
                 }
-                Result.failure(IllegalStateException("心跳失败: ${response.code}"))
+                Result.failure(IllegalStateException("心跳失败: ${response.code()}"))
             }
         } catch (e: Exception) {
             _serviceState.value = ServiceState.OFFLINE
@@ -237,7 +237,7 @@ class DeviceService private constructor(context: Context) {
                 XLog.i(TAG, "拉取到 ${tasks.size} 个待处理任务")
                 Result.success(tasks)
             } else {
-                Result.failure(IllegalStateException("拉取任务失败: ${response.code}"))
+                Result.failure(IllegalStateException("拉取任务失败: ${response.code()}"))
             }
         } catch (e: Exception) {
             XLog.e(TAG, "拉取任务异常", e)
@@ -273,7 +273,7 @@ class DeviceService private constructor(context: Context) {
                 XLog.i(TAG, "任务结果提交成功: $taskUuid")
                 Result.success(Unit)
             } else {
-                Result.failure(IllegalStateException("提交任务结果失败: ${response.code}"))
+                Result.failure(IllegalStateException("提交任务结果失败: ${response.code()}"))
             }
         } catch (e: Exception) {
             XLog.e(TAG, "提交任务结果异常", e)

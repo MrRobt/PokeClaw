@@ -132,8 +132,8 @@ class CloudClient private constructor(context: Context) {
                     false
                 }
             } else {
-                XLog.e(TAG, "Token 刷新失败: ${response.code}")
-                if (response.code == 401) {
+                XLog.e(TAG, "Token 刷新失败: ${response.code()}")
+                if (response.code() == 401) {
                     // refreshToken 也过期了，需要重新注册
                     tokenManager.clearTokens()
                 }
