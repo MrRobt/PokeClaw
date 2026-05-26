@@ -2,6 +2,9 @@ package io.agents.pokeclaw.cloud
 
 import android.content.Context
 import android.os.Build
+import com.google.gson.Gson
+import io.agents.pokeclaw.cloud.api.DeviceApi
+import io.agents.pokeclaw.cloud.auth.ClawSignatureGenerator
 import io.agents.pokeclaw.cloud.model.*
 import io.agents.pokeclaw.utils.XLog
 import kotlinx.coroutines.*
@@ -35,6 +38,7 @@ class DeviceService private constructor(context: Context) {
     private val cloudClient = CloudClient.getInstance(context)
     private val tokenManager = TokenManager.getInstance(context)
     private val deviceApi = cloudClient.deviceApi
+    private val gson = Gson()
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
@@ -267,12 +271,34 @@ class DeviceService private constructor(context: Context) {
                 errorCode = errorCode
             )
 
-            val response = deviceApi.submitTaskResult(taskUuid, request)
+            // 获取 deviceToken 用于签名
+            val deviceToken = tokenManager.getDeviceToken()
+                ?: return Result.failure(IllegalStateException("无 deviceToken，无法生成签名"))
+
+            // 生成 HMAC 签名头
+            val bodyJson = gson.toJson(request)
+            val path = "/api/claw-device/tasks/$taskUuid/result"
+            val signatureHeaders = ClawSignatureGenerator.generateHeaders(
+                deviceToken = deviceToken,
+                path = path,
+                bodyJson = bodyJson
+            )
+
+            XLog.d(TAG, "提交任务结果签名头生成完成: timestamp=${signatureHeaders.timestamp}")
+
+            val response = deviceApi.submitTaskResult(
+                taskUuid = taskUuid,
+                timestamp = signatureHeaders.timestamp,
+                nonce = signatureHeaders.nonce,
+                signature = signatureHeaders.signature,
+                request = request
+            )
 
             if (response.isSuccessful) {
                 XLog.i(TAG, "任务结果提交成功: $taskUuid")
                 Result.success(Unit)
             } else {
+                XLog.w(TAG, "任务结果提交失败: ${response.code()}")
                 Result.failure(IllegalStateException("提交任务结果失败: ${response.code()}"))
             }
         } catch (e: Exception) {

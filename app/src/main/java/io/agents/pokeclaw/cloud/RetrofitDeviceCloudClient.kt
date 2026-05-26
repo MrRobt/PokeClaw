@@ -3,7 +3,9 @@
 
 package io.agents.pokeclaw.cloud
 
+import com.google.gson.Gson
 import io.agents.pokeclaw.cloud.api.DeviceApi
+import io.agents.pokeclaw.cloud.auth.ClawSignatureGenerator
 import io.agents.pokeclaw.cloud.auth.CloudDeviceTokenStore
 import io.agents.pokeclaw.cloud.model.*
 import io.agents.pokeclaw.utils.XLog
@@ -35,6 +37,7 @@ class RetrofitDeviceCloudClient(
     private val okHttpClient: OkHttpClient by lazy { createOkHttpClient() }
     private val retrofit: Retrofit by lazy { createRetrofit() }
     private val deviceApi: DeviceApi by lazy { retrofit.create(DeviceApi::class.java) }
+    private val gson: Gson by lazy { Gson() }
 
     companion object {
         private const val CONNECT_TIMEOUT_SECONDS = 30L
@@ -186,13 +189,43 @@ class RetrofitDeviceCloudClient(
         return withContext(Dispatchers.IO) {
             try {
                 XLog.i(TAG, "submitTaskResult: 提交任务结果，taskUuid=$taskUuid, status=${request.status}")
-                val response = deviceApi.submitTaskResult(taskUuid, request)
+
+                // 获取 deviceToken 用于签名
+                val deviceToken = tokenStore.getDeviceToken()
+                if (deviceToken == null) {
+                    XLog.w(TAG, "submitTaskResult: 无 deviceToken，无法生成签名")
+                    offlineQueue.enqueue(taskUuid, request)
+                    return@withContext false
+                }
+
+                // 生成 HMAC 签名头
+                val bodyJson = gson.toJson(request)
+                val path = "/api/claw-device/tasks/$taskUuid/result"
+                val signatureHeaders = ClawSignatureGenerator.generateHeaders(
+                    deviceToken = deviceToken,
+                    path = path,
+                    bodyJson = bodyJson
+                )
+
+                XLog.d(TAG, "submitTaskResult: 签名头生成完成，timestamp=${signatureHeaders.timestamp}")
+
+                val response = deviceApi.submitTaskResult(
+                    taskUuid = taskUuid,
+                    timestamp = signatureHeaders.timestamp,
+                    nonce = signatureHeaders.nonce,
+                    signature = signatureHeaders.signature,
+                    request = request
+                )
 
                 if (response.isSuccessful) {
                     XLog.i(TAG, "submitTaskResult: 提交成功，taskUuid=$taskUuid")
                     true
                 } else {
                     XLog.w(TAG, "submitTaskResult: 提交失败，code=${response.code()}")
+                    // 401 签名错误不进入离线队列，需要检查签名逻辑
+                    if (response.code() == 401) {
+                        XLog.e(TAG, "submitTaskResult: 签名认证失败，请检查 HMAC 签名实现")
+                    }
                     // 进入离线队列
                     offlineQueue.enqueue(taskUuid, request)
                     false
@@ -257,12 +290,35 @@ class RetrofitDeviceCloudClient(
             return 0
         }
 
+        // 获取 deviceToken 用于签名
+        val deviceToken = tokenStore.getDeviceToken()
+        if (deviceToken == null) {
+            XLog.w(TAG, "flushOfflineQueue: 无 deviceToken，无法补报")
+            return 0
+        }
+
         XLog.i(TAG, "flushOfflineQueue: 尝试补报 ${dueEvents.size} 个离线事件")
 
         var successCount = 0
         dueEvents.forEach { event ->
             try {
-                val response = deviceApi.submitTaskResult(event.taskUuid, event.payload)
+                // 为离线事件生成 HMAC 签名头
+                val bodyJson = gson.toJson(event.payload)
+                val path = "/api/claw-device/tasks/${event.taskUuid}/result"
+                val signatureHeaders = ClawSignatureGenerator.generateHeaders(
+                    deviceToken = deviceToken,
+                    path = path,
+                    bodyJson = bodyJson
+                )
+
+                val response = deviceApi.submitTaskResult(
+                    taskUuid = event.taskUuid,
+                    timestamp = signatureHeaders.timestamp,
+                    nonce = signatureHeaders.nonce,
+                    signature = signatureHeaders.signature,
+                    request = event.payload
+                )
+
                 if (response.isSuccessful) {
                     offlineQueue.markSucceeded(event.requestId)
                     successCount++

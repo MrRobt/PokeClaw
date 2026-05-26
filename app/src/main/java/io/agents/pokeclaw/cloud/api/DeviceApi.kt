@@ -24,6 +24,9 @@ interface DeviceApi {
     @POST("api/claw-device/tasks/{taskUuid}/result")
     suspend fun submitTaskResult(
         @Path("taskUuid") taskUuid: String,
+        @Header("X-Claw-Timestamp") timestamp: Long,
+        @Header("X-Claw-Nonce") nonce: String,
+        @Header("X-Claw-Signature") signature: String,
         @Body request: TaskResultRequest
     ): Response<SubmitTaskResult200Response>
 

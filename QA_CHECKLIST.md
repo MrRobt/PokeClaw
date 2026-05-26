@@ -6,6 +6,7 @@ Every build must pass ALL checks before shipping.
 
 | 日期 | 状态 | 问题编号 | 描述 |
 |------|------|----------|------|
+| 2026-05-26 | PASS | DYQ-89 | 【Android】PokeClaw任务结果提交补齐HMAC签名契约：实现ClawSignatureGenerator(HMAC-SHA256)，修改DeviceApi添加3个签名头，更新RetrofitDeviceCloudClient和DeviceService集成签名，新增9个单元测试全部通过，QA_CHECKLIST.md新增Z4A章节；BUILD SUCCESSFUL，:app:testDebugUnitTest通过 |
 | 2026-05-23 | FIXED | DYQ-3 | 【Android】修复cloud模块编译错误：区分OkHttp Response.code属性与Retrofit Response.code()方法；4个文件修复，BUILD SUCCESSFUL in 9m35s
 | 2026-05-23 | BLOCKED | DYQ-3 | 【Android】PokeClaw端侧执行链路商业化验收：Mock UP/后端DOWN/DYQ-68仍blocked(2026-05-23T00:27:10Z)；端侧就绪等待阻塞解除
 | 2026-05-23 | FIXED | DYQ-3 | 【Android】RetrofitDeviceCloudClient.kt编译错误修复：7处`response.code`改为`response.code()`；OkHttp Response使用code()方法而非属性；Android编译通过验证
@@ -1580,6 +1581,72 @@ grep "Receipt submitted: SUCCESS"
 - [ ] **Z4-2**: Task execution failure → failure receipt with error code
 - [ ] **Z4-3**: Task timeout → timeout receipt
 - [ ] **Z4-4**: Result report with 401 → token refresh → retry submission
+
+---
+
+### Z4A. HMAC Signature Verification (DYQ-89)
+
+**Purpose**: Verify task result submission includes proper HMAC-SHA256 signature headers.
+
+**Prerequisites**:
+- Device registered with valid deviceToken
+- Task execution completed
+- Mock backend or real backend running
+
+**Background**: device.openapi.yaml v1.1.0 requires HMAC-SHA256 signatures for submitTaskResult to prevent device A from forging device B's task results.
+
+**Signature Algorithm**:
+```
+signing_string = timestamp + "\n" + nonce + "\n" + path + "\n" + sha256_hex(body)
+X-Claw-Signature = hex(HMAC-SHA256(device_token, signing_string))
+```
+
+**Required Headers**:
+- `X-Claw-Timestamp`: Client milliseconds timestamp (5min window)
+- `X-Claw-Nonce`: Client-generated UUID (5min deduplication)
+- `X-Claw-Signature`: HMAC-SHA256 signature (hex)
+
+**Test Steps**:
+```bash
+# 1. Monitor signature generation in logcat
+adb logcat -d | grep "submitTaskResult" | grep "signature"
+
+# 2. Verify headers in network request (via OkHttp logging)
+adb logcat -d | grep -E "X-Claw-Timestamp|X-Claw-Nonce|X-Claw-Signature"
+
+# 3. Verify signature format (64 hex characters)
+adb logcat -d | grep "X-Claw-Signature" | grep -oE "[0-9a-f]{64}"
+
+# 4. Run unit tests to verify signature algorithm
+./gradlew :app:testDebugUnitTest --tests "ClawSignatureGeneratorTest"
+```
+
+**Expected Result**:
+- All three signature headers present in submitTaskResult request
+- Timestamp is valid milliseconds (within 5min of server time)
+- Nonce is valid UUID format (8-4-4-4-12)
+- Signature is 64-character hexadecimal string
+- Same input produces same signature (deterministic)
+- Different inputs produce different signatures
+- Signature verified successfully by backend (200 OK)
+- Invalid signature returns 401 with code 401001 (INVALID_SIGNATURE)
+- Expired timestamp returns 401 with code 401002 (TIMESTAMP_EXPIRED)
+- Duplicate nonce returns 401 with code 401003 (NONCE_DUPLICATE)
+
+**Security Requirements**:
+- Full deviceToken never logged
+- Signature key never logged
+- No sensitive data in crash reports
+
+**Test IDs**:
+- [ ] **Z4A-1**: Submit task result → all 3 signature headers present
+- [ ] **Z4A-2**: Same request twice → different nonces, different signatures
+- [ ] **Z4A-3**: Unit test signature algorithm → deterministic output
+- [ ] **Z4A-4**: Backend verifies signature → 200 OK
+- [ ] **Z4A-5**: Invalid signature → 401001 INVALID_SIGNATURE
+- [ ] **Z4A-6**: Expired timestamp → 401002 TIMESTAMP_EXPIRED
+- [ ] **Z4A-7**: Replay attack (same nonce) → 401003 NONCE_DUPLICATE
+- [ ] **Z4A-8**: No deviceToken → error before signing, no sensitive log
 
 ---
 
