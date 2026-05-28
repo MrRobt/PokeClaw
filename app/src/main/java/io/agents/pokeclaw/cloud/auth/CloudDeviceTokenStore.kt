@@ -36,18 +36,18 @@ interface CloudDeviceTokenStore {
     fun clear()
 
     // 便捷方法，用于兼容 RetrofitDeviceCloudClient
+    // 注意：首次注册时必须使用 saveTokens(deviceToken, refreshToken, ...) 原子保存
     fun saveDeviceToken(token: String, expiresInSeconds: Long) {
         val snapshot = snapshot()
-        val refreshToken = snapshot?.refreshToken ?: ""
-        saveTokens(token, refreshToken, expiresInSeconds.toInt(), System.currentTimeMillis())
+            ?: throw IllegalStateException("首次保存令牌时必须使用 saveTokens(deviceToken, refreshToken, ...) 同时保存两个令牌")
+        saveTokens(token, snapshot.refreshToken, expiresInSeconds.toInt(), System.currentTimeMillis())
     }
 
     fun saveRefreshToken(token: String) {
         val snapshot = snapshot()
-        val deviceToken = snapshot?.deviceToken ?: ""
-        val expiresAt = snapshot?.expiresAtMillis ?: (System.currentTimeMillis() + 604800000)
-        val expiresInSeconds = ((expiresAt - System.currentTimeMillis()) / 1000).toInt()
-        saveTokens(deviceToken, token, expiresInSeconds.coerceAtLeast(0), System.currentTimeMillis())
+            ?: throw IllegalStateException("首次保存令牌时必须使用 saveTokens(deviceToken, refreshToken, ...) 同时保存两个令牌")
+        val expiresInSeconds = ((snapshot.expiresAtMillis - System.currentTimeMillis()) / 1000).toInt()
+        saveTokens(snapshot.deviceToken, token, expiresInSeconds.coerceAtLeast(0), System.currentTimeMillis())
     }
 
     fun getDeviceToken(): String? = snapshot()?.deviceToken
@@ -72,25 +72,47 @@ class AndroidKeystoreCloudDeviceTokenStore(
     private val prefs: SharedPreferences = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
     override fun saveTokens(deviceToken: String, refreshToken: String, expiresInSeconds: Int, nowMillis: Long) {
-        require(deviceToken.isNotBlank()) { "设备令牌不能为空" }
-        require(refreshToken.isNotBlank()) { "刷新令牌不能为空" }
-        val expiresAt = nowMillis + expiresInSeconds.coerceAtLeast(0) * 1000L
+        val snapshot = snapshot()
+
+        // 首次保存（无历史快照）：要求两个 token 都必须非空，原子保存
+        if (snapshot == null) {
+            require(deviceToken.isNotBlank()) { "设备令牌不能为空" }
+            require(refreshToken.isNotBlank()) { "刷新令牌不能为空" }
+            val expiresAt = nowMillis + expiresInSeconds.coerceAtLeast(0) * 1000L
+            prefs.edit()
+                .putString(KEY_DEVICE_TOKEN, encrypt(deviceToken))
+                .putString(KEY_REFRESH_TOKEN, encrypt(refreshToken))
+                .putLong(KEY_EXPIRES_AT, expiresAt)
+                .apply()
+            XLog.i(TAG, "saveTokens: 首次保存令牌成功，expiresAt=$expiresAt")
+            return
+        }
+
+        // 有历史快照：允许部分更新，空值保留原 token
+        val newDeviceToken = deviceToken.takeIf { it.isNotBlank() } ?: snapshot.deviceToken
+        val newRefreshToken = refreshToken.takeIf { it.isNotBlank() } ?: snapshot.refreshToken
+        val newExpiresAt = nowMillis + expiresInSeconds.coerceAtLeast(0) * 1000L
+
         prefs.edit()
-            .putString(KEY_DEVICE_TOKEN, encrypt(deviceToken))
-            .putString(KEY_REFRESH_TOKEN, encrypt(refreshToken))
-            .putLong(KEY_EXPIRES_AT, expiresAt)
+            .putString(KEY_DEVICE_TOKEN, encrypt(newDeviceToken))
+            .putString(KEY_REFRESH_TOKEN, encrypt(newRefreshToken))
+            .putLong(KEY_EXPIRES_AT, newExpiresAt)
             .apply()
-        XLog.i(TAG, "saveTokens: device token saved, expiresAt=$expiresAt")
+        XLog.i(TAG, "saveTokens: 更新令牌成功，deviceTokenChanged=${newDeviceToken != snapshot.deviceToken}, refreshTokenChanged=${newRefreshToken != snapshot.refreshToken}")
     }
 
     override fun updateDeviceToken(deviceToken: String, expiresInSeconds: Int, nowMillis: Long) {
         require(deviceToken.isNotBlank()) { "设备令牌不能为空" }
-        val expiresAt = nowMillis + expiresInSeconds.coerceAtLeast(0) * 1000L
+        val snapshot = snapshot()
+            ?: throw IllegalStateException("更新 deviceToken 前必须先完成首次注册，调用 saveTokens(deviceToken, refreshToken, ...)")
+        // 保留原 refreshToken，只更新 deviceToken 和过期时间
+        val newExpiresAt = nowMillis + expiresInSeconds.coerceAtLeast(0) * 1000L
         prefs.edit()
             .putString(KEY_DEVICE_TOKEN, encrypt(deviceToken))
-            .putLong(KEY_EXPIRES_AT, expiresAt)
+            .putString(KEY_REFRESH_TOKEN, encrypt(snapshot.refreshToken)) // 保留原 refreshToken
+            .putLong(KEY_EXPIRES_AT, newExpiresAt)
             .apply()
-        XLog.i(TAG, "updateDeviceToken: device token refreshed, expiresAt=$expiresAt")
+        XLog.i(TAG, "updateDeviceToken: deviceToken 已刷新，expiresAt=$newExpiresAt，refreshToken 保持不变")
     }
 
     override fun snapshot(): CloudDeviceTokenSnapshot? {

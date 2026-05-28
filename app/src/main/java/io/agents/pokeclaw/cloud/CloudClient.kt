@@ -2,6 +2,7 @@ package io.agents.pokeclaw.cloud
 
 import android.content.Context
 import io.agents.pokeclaw.cloud.api.DeviceApi
+import io.agents.pokeclaw.cloud.auth.LogSanitizer
 import io.agents.pokeclaw.utils.XLog
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -61,9 +62,13 @@ class CloudClient private constructor(context: Context) {
      * 创建 OkHttpClient
      */
     private fun createOkHttpClient(): OkHttpClient {
-        val loggingInterceptor = HttpLoggingInterceptor().apply {
-            // 日志级别：DEBUG构建时输出BODY，否则只输出BASIC
-            level = HttpLoggingInterceptor.Level.BODY
+        // 创建脱敏的日志拦截器，只输出 HEADERS 级别（不包含 body），并脱敏敏感头
+        val loggingInterceptor = HttpLoggingInterceptor { message ->
+            // 脱敏敏感头：Authorization, X-Claw-Signature, X-Claw-Nonce, X-Claw-Timestamp
+            val sanitizedMessage = sanitizeLogMessage(message)
+            XLog.d(TAG, sanitizedMessage)
+        }.apply {
+            level = HttpLoggingInterceptor.Level.HEADERS
         }
 
         return OkHttpClient.Builder()
@@ -78,13 +83,13 @@ class CloudClient private constructor(context: Context) {
                 val token = tokenManager.getDeviceToken()
                 if (token != null && shouldAddAuth(request.url.toString())) {
                     builder.addHeader("Authorization", "Bearer $token")
-                    XLog.d(TAG, "添加认证头: Bearer ${token.take(20)}...")
+                    XLog.d(TAG, "添加认证头: Bearer ${token.take(8)}...${token.takeLast(4)}")
                 }
 
                 val newRequest = builder.build()
                 val response = chain.proceed(newRequest)
 
-                // 处理 401 未认证
+                // 处理 401 未认证 (OkHttp Response 使用 .code 属性)
                 if (response.code == 401) {
                     XLog.w(TAG, "收到 401 未认证响应，需要刷新Token")
                     _connectionState.value = ConnectionState.AUTH_FAILED
@@ -93,6 +98,13 @@ class CloudClient private constructor(context: Context) {
                 response
             }
             .build()
+    }
+
+    /**
+     * 脱敏日志消息中的敏感头信息
+     */
+    private fun sanitizeLogMessage(message: String): String {
+        return LogSanitizer.sanitizeHttpHeaders(message)
     }
 
     /**
@@ -119,16 +131,17 @@ class CloudClient private constructor(context: Context) {
             )
             if (response.isSuccessful) {
                 val body = response.body()
-                if (body?.data != null) {
-                    tokenManager.saveDeviceToken(
+                if (body?.data?.deviceToken != null) {
+                    // Token 刷新只更新 deviceToken，保留原 refreshToken
+                    tokenManager.updateDeviceToken(
                         body.data.deviceToken,
                         body.data.expiresIn ?: 604800
                     )
-                    XLog.i(TAG, "Token 刷新成功")
+                    XLog.i(TAG, "Token 刷新成功，deviceToken 已更新，refreshToken 保持不变")
                     _connectionState.value = ConnectionState.CONNECTED
                     true
                 } else {
-                    XLog.e(TAG, "Token 刷新响应为空")
+                    XLog.e(TAG, "Token 刷新响应为空或缺少 deviceToken")
                     false
                 }
             } else {

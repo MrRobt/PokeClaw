@@ -143,21 +143,20 @@ class DeviceService private constructor(context: Context) {
             if (response.isSuccessful) {
                 val body = response.body()
                 val data = body?.data
-                if (data != null) {
-                    // 保存Token
-                    data.deviceToken?.let {
-                        tokenManager.saveDeviceToken(it, data.expiresIn ?: 604800)
-                    }
-                    data.refreshToken?.let {
-                        tokenManager.saveRefreshToken(it)
-                    }
+                if (data?.deviceToken != null && data.refreshToken != null) {
+                    // 原子保存两个 Token，禁止空 token 覆盖有效 token
+                    tokenManager.saveTokens(
+                        deviceToken = data.deviceToken,
+                        refreshToken = data.refreshToken,
+                        expiresInSeconds = data.expiresIn ?: 604800
+                    )
 
                     _serviceState.value = ServiceState.REGISTERED
-                    XLog.i(TAG, "设备注册成功: ${info.deviceId}")
+                    XLog.i(TAG, "设备注册成功: ${info.deviceId}, token 已原子保存")
                     Result.success(data)
                 } else {
                     _serviceState.value = ServiceState.ERROR
-                    Result.failure(IllegalStateException("注册响应数据为空"))
+                    Result.failure(IllegalStateException("注册响应数据为空或缺少 token"))
                 }
             } else {
                 _serviceState.value = ServiceState.ERROR

@@ -7,6 +7,7 @@ import com.google.gson.Gson
 import io.agents.pokeclaw.cloud.api.DeviceApi
 import io.agents.pokeclaw.cloud.auth.ClawSignatureGenerator
 import io.agents.pokeclaw.cloud.auth.CloudDeviceTokenStore
+import io.agents.pokeclaw.cloud.auth.LogSanitizer
 import io.agents.pokeclaw.cloud.model.*
 import io.agents.pokeclaw.utils.XLog
 import kotlinx.coroutines.Dispatchers
@@ -57,8 +58,13 @@ class RetrofitDeviceCloudClient(
     }
 
     private fun createOkHttpClient(): OkHttpClient {
-        val loggingInterceptor = HttpLoggingInterceptor().apply {
-            level = HttpLoggingInterceptor.Level.BODY
+        // 创建脱敏的日志拦截器，只输出 HEADERS 级别，并脱敏敏感头
+        val loggingInterceptor = HttpLoggingInterceptor { message ->
+            // 脱敏敏感头：Authorization, X-Claw-Signature, X-Claw-Nonce, X-Claw-Timestamp
+            val sanitizedMessage = sanitizeLogMessage(message)
+            XLog.d(TAG, sanitizedMessage)
+        }.apply {
+            level = HttpLoggingInterceptor.Level.HEADERS
         }
 
         return OkHttpClient.Builder()
@@ -73,13 +79,13 @@ class RetrofitDeviceCloudClient(
                 val token = tokenStore.getDeviceToken()
                 if (token != null && shouldAddAuth(request.url.toString())) {
                     builder.addHeader("Authorization", "Bearer $token")
-                    XLog.d(TAG, "添加认证头: Bearer ${token.take(20)}...")
+                    XLog.d(TAG, "添加认证头: Bearer ${token.take(8)}...${token.takeLast(4)}")
                 }
 
                 val newRequest = builder.build()
                 val response = chain.proceed(newRequest)
 
-                // 处理 401 未认证
+                // 处理 401 未认证 (OkHttp Response 使用 .code 属性)
                 if (response.code == 401) {
                     XLog.w(TAG, "收到 401 未认证响应，需要刷新Token")
                 }
@@ -87,6 +93,13 @@ class RetrofitDeviceCloudClient(
                 response
             }
             .build()
+    }
+
+    /**
+     * 脱敏日志消息中的敏感头信息
+     */
+    private fun sanitizeLogMessage(message: String): String {
+        return LogSanitizer.sanitizeHttpHeaders(message)
     }
 
     private fun createRetrofit(): Retrofit {
@@ -110,18 +123,18 @@ class RetrofitDeviceCloudClient(
                 if (response.isSuccessful) {
                     val body = response.body()
                     val data = body?.data
-                    if (data != null) {
-                        // 保存 Token
-                        data.deviceToken?.let {
-                            tokenStore.saveDeviceToken(it, (data.expiresIn ?: 604800).toLong())
-                        }
-                        data.refreshToken?.let {
-                            tokenStore.saveRefreshToken(it)
-                        }
-                        XLog.i(TAG, "register: 注册成功，deviceId=${request.deviceId}")
+                    if (data?.deviceToken != null && data.refreshToken != null) {
+                        // 原子保存两个 Token，禁止空 token 覆盖有效 token
+                        tokenStore.saveTokens(
+                            deviceToken = data.deviceToken,
+                            refreshToken = data.refreshToken,
+                            expiresInSeconds = data.expiresIn ?: 604800,
+                            nowMillis = System.currentTimeMillis()
+                        )
+                        XLog.i(TAG, "register: 注册成功，deviceId=${request.deviceId}, token 已原子保存")
                         true
                     } else {
-                        XLog.e(TAG, "register: 注册响应数据为空")
+                        XLog.e(TAG, "register: 注册响应数据为空或缺少 token")
                         false
                     }
                 } else {
@@ -259,14 +272,16 @@ class RetrofitDeviceCloudClient(
                     val body = response.body()
                     val data = body?.data
                     if (data?.deviceToken != null) {
-                        tokenStore.saveDeviceToken(
+                        // Token 刷新只更新 deviceToken，保留原 refreshToken
+                        tokenStore.updateDeviceToken(
                             data.deviceToken,
-                            (data.expiresIn ?: 604800).toLong()
+                            (data.expiresIn ?: 604800).toInt(),
+                            System.currentTimeMillis()
                         )
-                        XLog.i(TAG, "refreshTokenIfNeeded: Token刷新成功")
+                        XLog.i(TAG, "refreshTokenIfNeeded: Token刷新成功，deviceToken 已更新，refreshToken 保持不变")
                         true
                     } else {
-                        XLog.e(TAG, "refreshTokenIfNeeded: Token刷新响应为空")
+                        XLog.e(TAG, "refreshTokenIfNeeded: Token刷新响应为空或缺少 deviceToken")
                         false
                     }
                 } else {
