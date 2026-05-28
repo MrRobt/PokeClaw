@@ -9,8 +9,8 @@ import org.junit.Assert.*
 /**
  * LogSanitizer 单元测试。
  *
- * 验证：
- * 1. HTTP 头脱敏：Authorization、X-Claw-Signature、X-Claw-Nonce
+ * 验证（DYQ-90 安全要求）：
+ * 1. HTTP 头脱敏：Authorization、X-Claw-Signature、X-Claw-Nonce、X-Claw-Timestamp
  * 2. deviceToken 脱敏：显示前后部分
  * 3. 签名完全脱敏
  * 4. 通用字符串脱敏
@@ -58,12 +58,13 @@ class LogSanitizerTest {
     }
 
     @Test
-    fun `sanitizeHttpHeaders 保留 X-Claw-Timestamp`() {
+    fun `sanitizeHttpHeaders 脱敏 X-Claw-Timestamp`() {
         val input = "X-Claw-Timestamp: 1716284400000"
         val result = LogSanitizer.sanitizeHttpHeaders(input)
 
-        assertEquals("时间戳不应被脱敏", input, result)
-        assertTrue("应保留原始时间戳", result.contains("1716284400000"))
+        assertTrue("应包含 [REDACTED]", result.contains("[REDACTED]"))
+        assertFalse("不应包含原始时间戳", result.contains("1716284400000"))
+        assertTrue("应保留头名称", result.contains("X-Claw-Timestamp:"))
     }
 
     @Test
@@ -83,8 +84,8 @@ class LogSanitizerTest {
         assertFalse("不应包含原始 nonce", result.contains("550e8400"))
         assertFalse("不应包含原始签名", result.contains("abc123def"))
 
-        // 验证不敏感信息保留
-        assertTrue("应保留时间戳", result.contains("1716284400000"))
+        // 验证不敏感信息保留（DYQ-90: X-Claw-Timestamp 也需要脱敏）
+        assertFalse("不应包含原始时间戳", result.contains("1716284400000"))
         assertTrue("应保留 Content-Type", result.contains("Content-Type:"))
     }
 
@@ -168,8 +169,8 @@ class LogSanitizerTest {
         assertFalse("不应包含原始 nonce", result.contains("550e8400"))
         assertFalse("不应包含原始签名", result.contains("1a2b3c4d"))
 
-        // 验证关键信息保留
-        assertTrue("应保留时间戳", result.contains("1716284400000"))
+        // 验证关键信息保留（DYQ-90: X-Claw-Timestamp 已脱敏）
+        assertFalse("不应包含原始时间戳", result.contains("1716284400000"))
         assertTrue("应保留请求方法", result.contains("POST"))
         assertTrue("应保留路径", result.contains("/api/claw-device/tasks"))
     }

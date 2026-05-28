@@ -143,15 +143,19 @@ class TokenManager private constructor(context: Context) {
     /**
      * 更新 deviceToken（Token 刷新时使用）
      * 保留原 refreshToken 不变
+     *
+     * @param deviceToken 新的设备令牌
+     * @param expiresInSeconds 过期时间（秒）
+     * @param nowMillis 当前时间戳（毫秒），用于测试时可注入
      */
-    fun updateDeviceToken(deviceToken: String, expiresInSeconds: Int) {
+    fun updateDeviceToken(deviceToken: String, expiresInSeconds: Int, nowMillis: Long = System.currentTimeMillis()) {
         require(deviceToken.isNotBlank()) { "设备令牌不能为空" }
         // 必须有历史 refreshToken 才能只更新 deviceToken
         val existingRefreshToken = getRefreshToken()
             ?: throw IllegalStateException("更新 deviceToken 前必须先完成注册，调用 saveTokens()")
 
         val encryptedDeviceToken = encrypt(deviceToken)
-        val expiresAt = System.currentTimeMillis() + expiresInSeconds * 1000
+        val expiresAt = nowMillis + expiresInSeconds * 1000
 
         prefs.edit {
             putString(PREFS_KEY_DEVICE_TOKEN, encryptedDeviceToken)

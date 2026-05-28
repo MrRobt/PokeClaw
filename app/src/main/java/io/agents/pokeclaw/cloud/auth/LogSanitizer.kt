@@ -15,11 +15,11 @@ object LogSanitizer {
     /**
      * 脱敏 HTTP 头中的敏感信息。
      *
-     * 脱敏字段：
+     * 脱敏字段（DYQ-90 安全要求）：
      * - Authorization: Bearer <token> → Authorization: Bearer [REDACTED]
      * - X-Claw-Signature: <signature> → X-Claw-Signature: [REDACTED]
      * - X-Claw-Nonce: <nonce> → X-Claw-Nonce: [REDACTED]
-     * - X-Claw-Timestamp: 保留（时间戳不敏感）
+     * - X-Claw-Timestamp: <timestamp> → X-Claw-Timestamp: [REDACTED]
      *
      * @param message 原始日志消息
      * @return 脱敏后的日志消息
@@ -38,7 +38,10 @@ object LogSanitizer {
             .replace(Regex("(X-Claw-Nonce:\\s*)\\S+", RegexOption.IGNORE_CASE)) {
                 "${it.groupValues[1]}[REDACTED]"
             }
-            // X-Claw-Timestamp 可以保留（时间戳不敏感）
+            // 脱敏 X-Claw-Timestamp（大小写不敏感，DYQ-90 要求）
+            .replace(Regex("(X-Claw-Timestamp:\\s*)\\S+", RegexOption.IGNORE_CASE)) {
+                "${it.groupValues[1]}[REDACTED]"
+            }
     }
 
     /**
