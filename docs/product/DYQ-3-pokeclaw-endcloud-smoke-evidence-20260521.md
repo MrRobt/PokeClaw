@@ -141,7 +141,37 @@ adb shell exitCode=1
 |ADB 最小记录|阻塞：无在线设备|`artifacts/dyq3-smoke/20260601-224108-agent07191-heartbeat3/adb_minimal.log`|
 |依赖链复核|`DYQ-3` 仍被 `DYQ-10` 阻塞；`DYQ-10` 仍被 `DYQ-25` 阻塞；`DYQ-25` 当前 `in_progress`，等待 dev 白名单部署完成|Paperclip issue 快照：2026-06-01 22:42 +0800|
 
+## 5.4 2026-06-01 四次心跳复核证据
+|项|结果|证据|
+|---|---|---|
+|本地 Mock 端侧闭环|通过：注册、心跳、待处理任务拉取、任务结果回传均 HTTP 200；无令牌/坏令牌返回业务码 401；断网场景 curl exit=7|`artifacts/dyq3-smoke/20260601-224758-agent07191-heartbeat4/summary.md`、`artifacts/dyq3-smoke/20260601-224758-agent07191-heartbeat4-terminal.log`|
+|真实 dev 后端|阻塞：`http://192.168.250.3:48081/actuator/health` 健康检查失败，未进入注册链路|`artifacts/dyq3-smoke/20260601-224758-agent07191-real4/smoke_run.log`、`artifacts/dyq3-smoke/20260601-224758-agent07191-real4-terminal.log`|
+|ADB 最小记录|阻塞：无在线设备|`artifacts/dyq3-smoke/20260601-224758-agent07191-heartbeat4/adb_minimal.log`|
+|依赖链复核|`DYQ-3` 仍为 `blocked`；直接阻塞 `DYQ-10` 仍为 `blocked`，终端阻塞 `DYQ-139` 当前 `in_progress`，等待真实后端白名单/鉴权链路恢复|Paperclip issue 快照：2026-06-01 22:48 +0800|
+
+## 5.5 2026-06-01 五次心跳复核证据
+|项|结果|证据|
+|---|---|---|
+|本地 Mock 端侧闭环|通过：注册、心跳、待处理任务拉取、任务结果回传均 HTTP 200；无令牌/坏令牌返回业务码 401；断网场景 curl exit=7|`artifacts/dyq3-smoke/20260601-225419-agent07191-heartbeat5/summary.md`、`artifacts/dyq3-smoke/20260601-225419-agent07191-heartbeat5-terminal.log`|
+|真实 dev 后端|阻塞：`http://192.168.250.3:48081/actuator/health` 健康检查失败，未进入注册链路|`artifacts/dyq3-smoke/20260601-225431-agent07191-real5/smoke_run.log`、`artifacts/dyq3-smoke/20260601-225431-agent07191-real5-terminal.log`|
+|ADB 最小记录|阻塞：无在线设备，`adb shell getprop ro.product.model` 返回 `no devices/emulators found`|`artifacts/dyq3-smoke/20260601-225419-agent07191-heartbeat5/adb_minimal.log`|
+|依赖链复核|`DYQ-3` 仍为 `blocked`；阻塞关系仍包含 `DYQ-3 -> DYQ-5`、`DYQ-10 -> DYQ-3`、`DYQ-25 -> DYQ-10`、`DYQ-139 -> DYQ-25`，真实后端/三端验收依赖未解锁|Paperclip issue relation 快照：2026-06-01 22:54 +0800|
+
+## 5.6 2026-06-01 六次心跳复核证据
+|项|结果|证据|
+|---|---|---|
+|本地 Mock 端侧闭环|通过：注册、心跳、待处理任务拉取、任务结果回传均 HTTP 200；无令牌/坏令牌返回业务码 401；断网场景 curl exit=7|`artifacts/dyq3-smoke/20260601-230220-agent07191-heartbeat6/summary.md`、`artifacts/dyq3-smoke/20260601-230220-agent07191-heartbeat6-terminal.log`|
+|真实 dev 后端|阻塞：`http://192.168.250.3:48081/actuator/health` 健康检查失败，未进入注册链路|`artifacts/dyq3-smoke/20260601-230220-agent07191-real6/smoke_run.log`、`artifacts/dyq3-smoke/20260601-230220-agent07191-real6-terminal.log`|
+|ADB 最小记录|阻塞：无在线设备，`adb shell getprop ro.product.model` 返回 `no devices/emulators found`|`artifacts/dyq3-smoke/20260601-230220-agent07191-heartbeat6/adb_minimal.log`|
+|依赖链复核|`DYQ-3` 仍为 `blocked`；直接阻塞 `DYQ-10` 仍为 `blocked`，其终端阻塞 `DYQ-139` 当前 `in_progress`；`DYQ-5` 仍被 `DYQ-3` 阻塞|Paperclip issue 快照：2026-06-01 23:02 +0800|
+
 ## 6. 审计日志
+- 2026-06-01 23:02:20 +0800：六次复跑本地 Mock 端侧闭环，证据目录 `artifacts/dyq3-smoke/20260601-230220-agent07191-heartbeat6/`。
+- 2026-06-01 23:02:20 +0800：六次复跑真实 dev 后端 `http://192.168.250.3:48081`，健康检查失败，证据目录 `artifacts/dyq3-smoke/20260601-230220-agent07191-real6/`。
+- 2026-06-01 22:54:19 +0800：五次复跑本地 Mock 端侧闭环，证据目录 `artifacts/dyq3-smoke/20260601-225419-agent07191-heartbeat5/`。
+- 2026-06-01 22:54:31 +0800：五次复跑真实 dev 后端 `http://192.168.250.3:48081`，健康检查失败，证据目录 `artifacts/dyq3-smoke/20260601-225431-agent07191-real5/`。
+- 2026-06-01 22:47:58 +0800：四次复跑本地 Mock 端侧闭环，证据目录 `artifacts/dyq3-smoke/20260601-224758-agent07191-heartbeat4/`。
+- 2026-06-01 22:47:58 +0800：四次复跑真实 dev 后端 `http://192.168.250.3:48081`，健康检查失败，证据目录 `artifacts/dyq3-smoke/20260601-224758-agent07191-real4/`。
 - 2026-05-21 22:53:54 +0800：执行 `scripts/dyq3-endcloud-smoke.sh`。
 - 2026-05-21 22:53:59 +0800：生成证据目录 `artifacts/dyq3-smoke/20260521-225354/`。
 - 2026-05-21 22:55:24 +0800：整理验收文档并归档。
