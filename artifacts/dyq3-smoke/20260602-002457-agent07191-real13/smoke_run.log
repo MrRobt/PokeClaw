@@ -1,0 +1,4 @@
+[INFO] 输出目录: artifacts/dyq3-smoke/20260602-002457-agent07191-real13
+[INFO] BASE_URL: http://192.168.250.3:48081
+[INFO] 跳过启动本地mock，使用外部后端: http://192.168.250.3:48081
+[FAIL] 健康检查失败: http://192.168.250.3:48081/actuator/health
