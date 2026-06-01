@@ -67,7 +67,8 @@ request() {
 
   if [[ -n "$body" && -n "$token" ]]; then
     curl -sS -o "$resp_file" -w "%{http_code}" -X "$method" "$BASE_URL$path" \
-      -H "Content-Type: application/json" -H "Authorization: Bearer $token" \
+      -H "Content-Type: application/json" \
+      -H "Authorization: Bearer $token" \
       -d "$body" > "$code_file"
   elif [[ -n "$body" ]]; then
     curl -sS -o "$resp_file" -w "%{http_code}" -X "$method" "$BASE_URL$path" \

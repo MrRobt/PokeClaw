@@ -6,6 +6,7 @@ Every build must pass ALL checks before shipping.
 
 | 日期 | 状态 | 问题编号 | 描述 |
 |------|------|----------|------|
+| 2026-06-01 | BLOCKED | DYQ-3 | 【Android】PokeClaw端侧执行链路商业化验收：补齐 `api-contracts/device.openapi.yaml` 覆盖注册/心跳/任务拉取/结果回传/令牌刷新5个接口，并修正 `scripts/dyq3-endcloud-smoke.sh` 鉴权请求写法；执行 `bash -n scripts/dyq3-endcloud-smoke.sh`、OpenAPI路径校验、`MOCK_PORT=18087 USE_MOCK_BACKEND=1 ./scripts/dyq3-endcloud-smoke.sh artifacts/dyq3-smoke/20260601-203027-agent07191-contract-fix` 通过，令牌脱敏校验通过；ADB无在线设备，真实后端仍被DYQ-10/DYQ-82阻塞。 |
 | 2026-06-01 | BLOCKED | DYQ-3 | 【Android】PokeClaw端侧执行链路商业化验收：心跳唤醒复验本地Mock闭环；执行 `MOCK_PORT=18085 USE_MOCK_BACKEND=1 ./scripts/dyq3-endcloud-smoke.sh artifacts/dyq3-smoke/20260601-200754-agent07191-wake` 通过注册、心跳、待处理任务、结果回传、无/坏令牌、断网异常；ADB无在线设备，真实后端仍被DYQ-10/DYQ-82阻塞，证据见 `artifacts/dyq3-smoke/20260601-200754-agent07191-wake/summary.md` |
 | 2026-06-01 | BLOCKED | DYQ-3 | 【Android】PokeClaw端侧执行链路商业化验收：修复/验证本地Mock可配置端口冒烟脚本；执行 `MOCK_PORT=18082 USE_MOCK_BACKEND=1 ./scripts/dyq3-endcloud-smoke.sh artifacts/dyq3-smoke/20260601-193239-agent07191` 通过注册、心跳、待处理任务、结果回传、无/坏令牌、断网异常；ADB无在线设备，真实后端仍被DYQ-10/DYQ-82阻塞，证据见 `artifacts/dyq3-smoke/20260601-193239-agent07191/summary.md` |
 | 2026-05-28 | PASS | DYQ-89 | 【Android】PokeClaw任务结果提交补齐HMAC签名契约（日志脱敏补充）：新增LogSanitizer工具类统一处理敏感日志脱敏，新增LogSanitizerTest 13个单元测试，修复CloudClient/RetrofitDeviceCloudClient使用LogSanitizer；DYQ-94复核要求完成；BUILD SUCCESSFUL，97个单元测试通过 |
@@ -1076,6 +1077,7 @@ Layer 1 broadcast bypasses UI routing. Only Layer 3 catches routing bugs.
 - [ ] **Z12. 设备令牌刷新窗口与脱敏日志**：保存注册返回的 deviceToken/refreshToken → 在过期前十分钟触发刷新判断 → 期望磁盘只存加密载荷、日志不打印令牌正文、`Authorization` 只注入 `Bearer` 前缀一次。建议命令：`adb logcat -c` → 启用云端设备节点 → `adb logcat -d | grep -E "CloudDeviceTokenStore|CloudDeviceAuth"`，人工确认无 token 正文。
 
 - [ ] **Z13. WorkManager 心跳调度**：启用云端设备节点 → 期望 WorkManager 启动 `CloudHeartbeatWorker` 周期性任务 → 查看日志确认心跳定时触发 → 关闭云端节点开关 → 期望 `WorkManager.cancelUniqueWork` 停止心跳。建议命令：`adb shell dumpsys jobscheduler | grep -E "pokeclaw|heartbeat"`、`adb logcat -d | grep -E "CloudHeartbeatWorker|心跳调度"`。
+- [ ] **Z14. DYQ-3 冒烟脚本契约与令牌校验**：不连接真实 dyq 后端 → 启动 `scripts/mock-dyq-backend.py` → 执行 `MOCK_PORT=<空闲端口> USE_MOCK_BACKEND=1 ./scripts/dyq3-endcloud-smoke.sh <输出目录>` → 期望注册、心跳、任务拉取、结果回传、无/坏令牌、断网异常全部通过；运行日志和摘要不得打印真实 `deviceToken/refreshToken`；`api-contracts/device.openapi.yaml` 覆盖脚本用到的 5 个端侧接口。真机在线后再补跑 Z1-Z7。
 
 ---
 

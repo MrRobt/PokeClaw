@@ -1,0 +1,355 @@
+openapi: 3.0.3
+info:
+  title: PokeClaw 端侧设备节点接口契约
+  version: 0.1.0
+  description: |
+    DYQ-3 端侧执行链路最小商业化验收契约。
+    该文件固定 PokeClaw 端侧已实现/冒烟脚本已覆盖的注册、心跳、任务拉取、结果回传、令牌刷新接口。
+servers:
+  - url: http://127.0.0.1:18080
+    description: 本地 Mock 后端
+  - url: https://dyq.example.com
+    description: 真实 DYQ 后端占位，实际地址以联调环境为准
+tags:
+  - name: claw-device
+    description: PokeClaw 端侧设备节点接口
+paths:
+  /api/claw-device/register:
+    post:
+      tags: [claw-device]
+      summary: 设备注册
+      operationId: registerDevice
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeviceRegisterRequest'
+      responses:
+        '200':
+          description: 注册成功或业务错误包装响应
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeviceRegisterResponseWrapper'
+  /api/claw-device/heartbeat:
+    post:
+      tags: [claw-device]
+      summary: 设备心跳
+      operationId: sendHeartbeat
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeviceHeartbeatRequest'
+      responses:
+        '200':
+          description: 心跳成功或业务错误包装响应
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeviceHeartbeatResponseWrapper'
+  /api/claw-device/devices/{deviceId}/pending-tasks:
+    get:
+      tags: [claw-device]
+      summary: 拉取设备待处理任务
+      operationId: getPendingTasks
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: deviceId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: 待处理任务列表或业务错误包装响应
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PendingTasksResponseWrapper'
+  /api/claw-device/tasks/{taskUuid}/result:
+    post:
+      tags: [claw-device]
+      summary: 上报任务执行结果
+      operationId: submitTaskResult
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: taskUuid
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: X-Claw-Timestamp
+          in: header
+          required: false
+          schema:
+            type: integer
+            format: int64
+          description: HMAC 签名时间戳；真实后端验签时必填，Mock 可选。
+        - name: X-Claw-Nonce
+          in: header
+          required: false
+          schema:
+            type: string
+          description: HMAC 签名随机串；真实后端验签时必填，Mock 可选。
+        - name: X-Claw-Signature
+          in: header
+          required: false
+          schema:
+            type: string
+          description: HMAC-SHA256 签名；真实后端验签时必填，Mock 可选。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaskResultRequest'
+      responses:
+        '200':
+          description: 结果接收成功或业务错误包装响应
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SubmitTaskResultResponseWrapper'
+  /api/claw-device/token/refresh:
+    post:
+      tags: [claw-device]
+      summary: 刷新设备令牌
+      operationId: refreshDeviceToken
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TokenRefreshRequest'
+      responses:
+        '200':
+          description: 刷新成功或业务错误包装响应
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RefreshDeviceTokenResponseWrapper'
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: deviceToken
+  schemas:
+    CommonResponse:
+      type: object
+      required: [code, timestamp]
+      properties:
+        code:
+          type: integer
+          description: 业务码；0 或 200 表示成功，401 表示令牌缺失/无效。
+        msg:
+          type: string
+          nullable: true
+        timestamp:
+          type: integer
+          format: int64
+    DeviceRegisterRequest:
+      type: object
+      required: [deviceId]
+      properties:
+        deviceId:
+          type: string
+        deviceName:
+          type: string
+          nullable: true
+        deviceModel:
+          type: string
+          nullable: true
+        androidVersion:
+          type: string
+          nullable: true
+        appVersion:
+          type: string
+          nullable: true
+        publicKey:
+          type: string
+          nullable: true
+    DeviceRegisterData:
+      type: object
+      required: [deviceToken, refreshToken, expiresIn, deviceId]
+      properties:
+        deviceToken:
+          type: string
+        refreshToken:
+          type: string
+        expiresIn:
+          type: integer
+        deviceId:
+          type: string
+    DeviceRegisterResponseWrapper:
+      allOf:
+        - $ref: '#/components/schemas/CommonResponse'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/DeviceRegisterData'
+    DeviceHeartbeatRequest:
+      type: object
+      properties:
+        batteryLevel:
+          type: integer
+          minimum: 0
+          maximum: 100
+          nullable: true
+        isCharging:
+          type: boolean
+          nullable: true
+        networkType:
+          type: string
+          nullable: true
+          enum: [wifi, cellular, offline]
+    DeviceHeartbeatData:
+      type: object
+      properties:
+        pendingTaskCount:
+          type: integer
+          minimum: 0
+        skillVersion:
+          type: integer
+          nullable: true
+        serverTime:
+          oneOf:
+            - type: integer
+              format: int64
+            - type: string
+          nullable: true
+    DeviceHeartbeatResponseWrapper:
+      allOf:
+        - $ref: '#/components/schemas/CommonResponse'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/DeviceHeartbeatData'
+    PendingTaskItem:
+      type: object
+      required: [taskUuid, command, createdAt]
+      properties:
+        taskUuid:
+          type: string
+        uuid:
+          type: string
+          nullable: true
+          description: 兼容历史 Mock 字段。
+        command:
+          type: string
+        mode:
+          type: string
+          nullable: true
+        priority:
+          type: string
+          nullable: true
+        type:
+          type: string
+          nullable: true
+        payload:
+          type: object
+          additionalProperties: true
+          nullable: true
+        createdAt:
+          type: integer
+          format: int64
+    PendingTasksResponseWrapper:
+      allOf:
+        - $ref: '#/components/schemas/CommonResponse'
+        - type: object
+          properties:
+            data:
+              type: array
+              items:
+                $ref: '#/components/schemas/PendingTaskItem'
+    TaskResultRequest:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [SUCCESS, FAILED, RUNNING, CANCELLED]
+        result:
+          type: string
+          nullable: true
+        errorMessage:
+          type: string
+          nullable: true
+        executionTimeMs:
+          type: integer
+          format: int64
+          nullable: true
+        toolCalls:
+          type: string
+          nullable: true
+        evidenceUrls:
+          type: string
+          nullable: true
+        modelUsed:
+          type: string
+          nullable: true
+        errorCategory:
+          type: string
+          nullable: true
+        errorCode:
+          type: string
+          nullable: true
+        errorDetail:
+          type: string
+          nullable: true
+        recoverable:
+          type: boolean
+          nullable: true
+        suggestedAction:
+          type: string
+          nullable: true
+        screenshotBase64:
+          type: string
+          nullable: true
+        logSnippet:
+          type: string
+          nullable: true
+    SubmitTaskResultData:
+      type: object
+      properties:
+        taskUuid:
+          type: string
+        received:
+          type: boolean
+    SubmitTaskResultResponseWrapper:
+      allOf:
+        - $ref: '#/components/schemas/CommonResponse'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/SubmitTaskResultData'
+    TokenRefreshRequest:
+      type: object
+      required: [refreshToken]
+      properties:
+        refreshToken:
+          type: string
+    RefreshDeviceTokenData:
+      type: object
+      required: [deviceToken, refreshToken, expiresIn]
+      properties:
+        deviceToken:
+          type: string
+        refreshToken:
+          type: string
+        expiresIn:
+          type: integer
+    RefreshDeviceTokenResponseWrapper:
+      allOf:
+        - $ref: '#/components/schemas/CommonResponse'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/RefreshDeviceTokenData'
