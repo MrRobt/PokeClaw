@@ -521,6 +521,24 @@ adb shell exitCode=1
 |ADB 最小记录|阻塞：无在线设备，`adb devices -l` 空；`adb shell getprop ro.product.model` 返回 `no devices/emulators found`|`artifacts/dyq3-smoke/20260602-061239-agent07191-heartbeat56-mock/adb_minimal.log`、`artifacts/dyq3-smoke/20260602-061239-agent07191-probe56/probe.log`|
 |依赖链复核|`DYQ-3` 仍为 `blocked`；直接强阻塞 `DYQ-10` 仍为 `blocked`；`DYQ-10` 仍被 `DYQ-25` 阻塞；终端阻塞 `DYQ-150` 当前 `in_progress`，导致真实后端 48081 尚未恢复；`DYQ-9` 已 `done` 但历史 blocker 关系仍存在；`DYQ-5` 仍被 `DYQ-3` 阻塞|Paperclip issue 快照：2026-06-02 06:13 +0800|
 
+## 5.65 2026-06-02 六十五次心跳复核证据
+|项|结果|证据|
+|---|---|---|
+|本地 Mock 端侧闭环|通过：注册、心跳、待处理任务拉取、任务结果回传均 HTTP 200 且 body.code=200；无令牌/坏令牌返回业务码 401；断网场景 curl exit=7|`artifacts/dyq3-smoke/20260602-073104-agent07191-heartbeat65-mock/summary.md`、`artifacts/dyq3-smoke/20260602-073104-agent07191-heartbeat65-mock/run_console.log`|
+|真实 dev 后端|阻塞：`http://192.168.250.3:48081/actuator/health` 健康检查失败，脚本实际退出码 1，未进入真实注册链路|`artifacts/dyq3-smoke/20260602-073104-agent07191-heartbeat65-real/run_console.log`|
+|端口补探|阻塞：`192.168.250.3:48081/8080`、`127.0.0.1:48081/8080` 的 `/actuator/health` 与 `/api/claw-device/register` 均 `http=000`、`exit=7`|`artifacts/dyq3-smoke/20260602-073104-agent07191-heartbeat65-real-probes/probe_summary.log`|
+|ADB 最小记录|阻塞：当前环境无在线设备，`adb shell getprop ro.product.model` 返回 `no devices/emulators found`|`artifacts/dyq3-smoke/20260602-073104-agent07191-heartbeat65-mock/adb_minimal.log`|
+|依赖链复核|`DYQ-3` 仍为 `blocked`；直接阻塞 `DYQ-10` 仍为 `blocked`；终端阻塞 `DYQ-150` 为 `in_progress`，等待 48081 后端实例恢复|Paperclip issue 快照：2026-06-02 07:32 +0800|
+
+## 5.64 2026-06-02 六十四次心跳复核证据
+|项|结果|证据|
+|---|---|---|
+|本地 Mock 端侧闭环|通过：注册、心跳、待处理任务拉取、任务结果回传均 HTTP 200 且 body.code=200；无令牌/坏令牌返回业务码 401；断网场景 curl exit=7|`artifacts/dyq3-smoke/20260602-072342-agent07191-heartbeat64-mock/summary.md`、`artifacts/dyq3-smoke/20260602-072342-agent07191-heartbeat64-mock/run_console.log`|
+|真实 dev 后端|阻塞：`http://192.168.250.3:48081/actuator/health` 健康检查失败，脚本退出码 1，未进入真实注册链路|`artifacts/dyq3-smoke/20260602-072400-agent07191-heartbeat64-real/smoke_run.log`、`artifacts/dyq3-smoke/20260602-072400-agent07191-heartbeat64-real/run_console.log`|
+|端口补探|阻塞：`192.168.250.3:48081/8080`、`127.0.0.1:48081/8080` 的 `/actuator/health` 与 `/api/claw-device/register` 均 `http=000`、`exit=7`|`artifacts/dyq3-smoke/20260602-072400-agent07191-heartbeat64-real/probes.log`|
+|ADB 最小记录|阻塞：当前环境无在线设备，`adb shell getprop ro.product.model` 返回 `no devices/emulators found`|`artifacts/dyq3-smoke/20260602-072342-agent07191-heartbeat64-mock/adb_minimal.log`|
+|依赖链复核|`DYQ-3` 仍为 `blocked`；直接阻塞 `DYQ-10` 仍为 `blocked`；终端阻塞 `DYQ-150` 为 `in_progress`，等待 48081 后端实例恢复|Paperclip issue 快照：2026-06-02 07:24 +0800|
+
 ## 5.63 2026-06-02 六十三次心跳复核证据
 |项|结果|证据|
 |---|---|---|
@@ -549,6 +567,10 @@ adb shell exitCode=1
 |依赖链复核|`DYQ-3` 仍为 `blocked`；直接强阻塞 `DYQ-10` 仍为 `blocked`；终端阻塞 `DYQ-150` 当前 `in_progress`，等待 48081 后端实例恢复后才能复跑真实端云验收|Paperclip issue 快照：2026-06-02 06:59 +0800|
 
 ## 6. 审计日志
+- 2026-06-02 07:32:30 +0800：六十五次复跑本地 Mock 端侧闭环，证据目录 `artifacts/dyq3-smoke/20260602-073104-agent07191-heartbeat65-mock/`；注册/心跳/任务拉取/结果回传均 HTTP 200 且 body.code=200，无令牌/坏令牌业务码401，断网 curl exit=7。
+- 2026-06-02 07:32:30 +0800：六十五次复跑真实 dev 后端 `http://192.168.250.3:48081`，健康检查失败，脚本实际退出码1；补充 `192.168.250.3:48081/8080`、`127.0.0.1:48081/8080` 健康/注册探测均 `http=000 exit=7`；ADB 仍无在线设备；Paperclip 复核：`DYQ-3` blocked，`DYQ-10` blocked，终端阻塞 `DYQ-150` in_progress。
+- 2026-06-02 07:24:00 +0800：六十四次复跑本地 Mock 端侧闭环，证据目录 `artifacts/dyq3-smoke/20260602-072342-agent07191-heartbeat64-mock/`；注册/心跳/任务拉取/结果回传均 HTTP 200 且 body.code=200，无令牌/坏令牌业务码401，断网 curl exit=7。
+- 2026-06-02 07:24:00 +0800：六十四次复跑真实 dev 后端 `http://192.168.250.3:48081`，健康检查失败退出码1，证据目录 `artifacts/dyq3-smoke/20260602-072400-agent07191-heartbeat64-real/`；补充 `192.168.250.3:48081/8080`、`127.0.0.1:48081/8080` 健康/注册探测均 `http=000 exit=7`；ADB 仍无在线设备；Paperclip 复核：`DYQ-3` 仍 blocked，`DYQ-10` 仍 blocked，终端阻塞 `DYQ-150` 仍 in_progress。
 - 2026-06-02 07:16:36 +0800：六十三次复跑本地 Mock 端侧闭环，证据目录 `artifacts/dyq3-smoke/20260602-071636-agent07191-heartbeat63-mock/`；注册/心跳/任务拉取/结果回传均 HTTP 200 且 body.code=200，无令牌/坏令牌业务码401，断网 curl exit=7。
 - 2026-06-02 07:16:36 +0800：六十三次复跑真实 dev 后端 `http://192.168.250.3:48081`，健康检查失败退出码1，证据目录 `artifacts/dyq3-smoke/20260602-071636-agent07191-heartbeat63-real/`；补充四地址健康/注册探测均 `http=000 exit=7`，证据 `artifacts/dyq3-smoke/20260602-071636-agent07191-heartbeat63-real-probes/probe_summary.log`；ADB 仍无在线设备，证据 `artifacts/dyq3-smoke/20260602-071636-agent07191-heartbeat63-adb/adb.log`；Paperclip 复核：`DYQ-3` 仍 blocked，`DYQ-10` 仍 blocked，终端阻塞 `DYQ-150` 仍 in_progress。
 - 2026-06-02 07:05:35 +0800：六十二次复跑本地 Mock 端侧闭环，证据目录 `artifacts/dyq3-smoke/20260602-070535-agent07191-heartbeat62-mock/`；注册/心跳/任务拉取/结果回传均 HTTP 200 且 body.code=200，无令牌/坏令牌业务码401，断网 curl exit=7。
