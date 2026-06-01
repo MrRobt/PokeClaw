@@ -6,6 +6,7 @@ Every build must pass ALL checks before shipping.
 
 | 日期 | 状态 | 问题编号 | 描述 |
 |------|------|----------|------|
+| 2026-06-01 | BLOCKED | DYQ-3 | 【Android】PokeClaw端侧执行链路商业化验收：修复/验证本地Mock可配置端口冒烟脚本；执行 `MOCK_PORT=18082 USE_MOCK_BACKEND=1 ./scripts/dyq3-endcloud-smoke.sh artifacts/dyq3-smoke/20260601-193239-agent07191` 通过注册、心跳、待处理任务、结果回传、无/坏令牌、断网异常；ADB无在线设备，真实后端仍被DYQ-10/DYQ-82阻塞，证据见 `artifacts/dyq3-smoke/20260601-193239-agent07191/summary.md` |
 | 2026-05-28 | PASS | DYQ-89 | 【Android】PokeClaw任务结果提交补齐HMAC签名契约（日志脱敏补充）：新增LogSanitizer工具类统一处理敏感日志脱敏，新增LogSanitizerTest 13个单元测试，修复CloudClient/RetrofitDeviceCloudClient使用LogSanitizer；DYQ-94复核要求完成；BUILD SUCCESSFUL，97个单元测试通过 |
 | 2026-05-26 | PASS | DYQ-89 | 【Android】PokeClaw任务结果提交补齐HMAC签名契约：实现ClawSignatureGenerator(HMAC-SHA256)，修改DeviceApi添加3个签名头，更新RetrofitDeviceCloudClient和DeviceService集成签名，新增9个单元测试全部通过，QA_CHECKLIST.md新增Z4A章节；BUILD SUCCESSFUL，:app:testDebugUnitTest通过 |
 | 2026-05-23 | FIXED | DYQ-3 | 【Android】修复cloud模块编译错误：区分OkHttp Response.code属性与Retrofit Response.code()方法；4个文件修复，BUILD SUCCESSFUL in 9m35s

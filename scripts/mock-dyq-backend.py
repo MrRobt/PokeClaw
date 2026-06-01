@@ -6,6 +6,7 @@
 # 日期：2026-05-18
 
 import json
+import os
 import uuid
 import time
 from datetime import datetime
@@ -260,6 +261,7 @@ def get_status():
 
 
 if __name__ == '__main__':
+    port = int(os.environ.get('MOCK_PORT', '18080'))
     print("=" * 60)
     print("PokeClaw DYQ后端Mock服务")
     print("=" * 60)
@@ -273,7 +275,7 @@ if __name__ == '__main__':
     print("  GET  /actuator/health                - 健康检查")
     print("  GET  /api/status                     - Mock状态")
     print("=" * 60)
-    print("监听地址: http://0.0.0.0:18080")
+    print(f"监听地址: http://0.0.0.0:{port}")
     print("=" * 60)
     
-    app.run(host='0.0.0.0', port=18080, debug=False)
+    app.run(host='0.0.0.0', port=port, debug=False)

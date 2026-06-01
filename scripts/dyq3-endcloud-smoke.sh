@@ -34,7 +34,7 @@ cleanup() {
 trap cleanup EXIT
 
 if [[ "$USE_MOCK_BACKEND" == "1" ]]; then
-  python3 -u "$ROOT_DIR/scripts/mock-dyq-backend.py" >"$MOCK_LOG" 2>&1 &
+  MOCK_PORT="$MOCK_PORT" python3 -u "$ROOT_DIR/scripts/mock-dyq-backend.py" >"$MOCK_LOG" 2>&1 &
   MOCK_PID=$!
   echo "[INFO] mock 后端已启动, pid=$MOCK_PID" | tee -a "$RUN_LOG"
 else
@@ -67,7 +67,8 @@ request() {
 
   if [[ -n "$body" && -n "$token" ]]; then
     curl -sS -o "$resp_file" -w "%{http_code}" -X "$method" "$BASE_URL$path" \
-      -H "Content-Type: application/json" -H "Authorization: Bearer $token" -d "$body" > "$code_file"
+      -H "Content-Type: application/json" -H "Authorization: Bearer $token" \
+      -d "$body" > "$code_file"
   elif [[ -n "$body" ]]; then
     curl -sS -o "$resp_file" -w "%{http_code}" -X "$method" "$BASE_URL$path" \
       -H "Content-Type: application/json" -d "$body" > "$code_file"
@@ -178,7 +179,7 @@ fi
 set +e
 curl -sS --connect-timeout 2 --max-time 4 -o /dev/null \
   -X POST "$NETWORK_DOWN_BASE_URL/api/claw-device/heartbeat" \
-  -H "Content-Type: application/json" -H "Authorization: Bearer $DEVICE_TOKEN" \
+  -H "Content-Type: application/json" -H "Authorization: Bearer mock-network-down-token" \
   -d "$HEARTBEAT_BODY" 2>"$NETWORK_ERR_FILE"
 NETWORK_EXIT=$?
 set -e
