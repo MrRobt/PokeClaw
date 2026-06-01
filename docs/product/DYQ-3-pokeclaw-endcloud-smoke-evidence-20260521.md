@@ -481,7 +481,19 @@ adb shell exitCode=1
 |ADB 最小记录|阻塞：无在线设备，`adb devices -l` 空；`adb shell getprop ro.product.model` 返回 `no devices/emulators found`|`artifacts/dyq3-smoke/20260602-045755-agent07191-heartbeat49-mock/adb_minimal.log`、`artifacts/dyq3-smoke/20260602-045755-agent07191-heartbeat49-probe/adb_devices.log`、`artifacts/dyq3-smoke/20260602-045755-agent07191-heartbeat49-probe/adb_model.log`|
 |依赖链复核|`DYQ-3` 仍为 `blocked`；直接强阻塞 `DYQ-10` 仍为 `blocked`；终端阻塞 `DYQ-25` 当前 `in_progress` 且仍被已 `done` 的 `DYQ-145` 历史恢复项挂住；`DYQ-9` 已 `done` 但历史 blocker 关系仍存在；`DYQ-5` 仍被 `DYQ-3` 阻塞|Paperclip issue 快照：2026-06-02 04:59 +0800|
 
+## 5.53 2026-06-02 五十三次心跳复核证据
+
+|项|结果|证据|
+|---|---|---|
+|脚本语法检查|通过：`bash -n scripts/dyq3-endcloud-smoke.sh` 无报错|终端执行记录：2026-06-02 05:47 +0800|
+|本地 Mock 端侧闭环|通过：注册、心跳、待处理任务拉取、任务结果回传均 HTTP 200 且 `body.code=200`；无令牌/坏令牌返回业务码 401；断网场景 curl exit=7|`artifacts/dyq3-smoke/20260602-054726-agent07191-heartbeat53-mock/summary.md`、`artifacts/dyq3-smoke/20260602-054726-agent07191-heartbeat53-mock-terminal.log`|
+|真实 dev 后端|阻塞：`http://192.168.250.3:48081/actuator/health` 健康检查失败，脚本退出码 1，未进入真实注册链路；补充探测 `192.168.250.3:48081/8080`、`127.0.0.1:48081/8080` 的健康与注册端点均 `http=000 exit=7`|`artifacts/dyq3-smoke/20260602-054735-agent07191-real53/smoke_run.log`、`artifacts/dyq3-smoke/20260602-054735-agent07191-real53-terminal.log`、`artifacts/dyq3-smoke/20260602-054837-agent07191-probe53b/probe.log`|
+|ADB 最小记录|阻塞：无在线设备，`adb devices -l` 空；`adb shell getprop ro.product.model` 返回 `no devices/emulators found`|`artifacts/dyq3-smoke/20260602-054726-agent07191-heartbeat53-mock/adb_minimal.log`、`artifacts/dyq3-smoke/20260602-054837-agent07191-probe53b/probe.log`|
+|依赖链复核|`DYQ-3` 仍为 `blocked`；直接强阻塞 `DYQ-10` 仍为 `blocked`；上游 `DYQ-25` 仍为 `blocked`，且依赖 `DYQ-11`、`DYQ-18`、已 `done` 的 `DYQ-145` 历史关系；`DYQ-9` 已 `done` 但历史 blocker 关系仍存在；`DYQ-5` 仍被 `DYQ-3` 阻塞|Paperclip issue relation 快照：2026-06-02 05:48 +0800|
+
 ## 6. 审计日志
+- 2026-06-02 05:47 +0800：五十三次复跑本地 Mock 端侧闭环，证据目录 `artifacts/dyq3-smoke/20260602-054726-agent07191-heartbeat53-mock/`。
+- 2026-06-02 05:47 +0800：五十三次复跑真实 dev 后端 `http://192.168.250.3:48081`，健康检查失败，证据目录 `artifacts/dyq3-smoke/20260602-054735-agent07191-real53/`；补充四地址健康/注册探测与 ADB 环境探测，证据目录 `artifacts/dyq3-smoke/20260602-054837-agent07191-probe53b/`。
 - 2026-06-02 04:57 +0800：四十九次复跑本地 Mock 端侧闭环，证据目录 `artifacts/dyq3-smoke/20260602-045755-agent07191-heartbeat49-mock/`。
 - 2026-06-02 04:57 +0800：四十九次复跑真实 dev 后端 `http://192.168.250.3:48081`，健康检查失败，证据目录 `artifacts/dyq3-smoke/20260602-045755-agent07191-heartbeat49-real/`；补充四地址健康探测与 ADB 环境探测，证据目录 `artifacts/dyq3-smoke/20260602-045755-agent07191-heartbeat49-probe/`。
 - 2026-06-02 04:52 +0800：四十八次复跑本地 Mock 端侧闭环，证据目录 `artifacts/dyq3-smoke/20260602-045252-agent07191-heartbeat48-mock/`。
