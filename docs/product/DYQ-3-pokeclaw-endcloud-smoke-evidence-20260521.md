@@ -239,7 +239,17 @@ adb shell exitCode=1
 |ADB 最小记录|阻塞：无在线设备，`adb shell getprop ro.product.model` 返回 `no devices/emulators found`|`artifacts/dyq3-smoke/20260602-003913-agent07191-heartbeat15/adb_minimal.log`|
 |依赖链复核|`DYQ-3` 仍为 `blocked`；直接强阻塞 `DYQ-10` 仍为 `blocked`，其终端阻塞 `DYQ-25` 当前为 `todo`；`DYQ-9` 已 done 但历史 blocker 关系仍在；`DYQ-5` 仍被 `DYQ-3` 阻塞|Paperclip issue/relation 快照：2026-06-02 00:39 +0800|
 
+## 5.16 2026-06-02 十六次心跳复核证据
+|项|结果|证据|
+|---|---|---|
+|本地 Mock 端侧闭环|通过：注册、心跳、待处理任务拉取、任务结果回传均 HTTP 200；无令牌/坏令牌返回业务码 401；断网场景 curl exit=7|`artifacts/dyq3-smoke/20260602-004641-agent07191-heartbeat16/summary.md`、`artifacts/dyq3-smoke/20260602-004641-agent07191-heartbeat16-terminal.log`|
+|真实 dev 后端|阻塞：`http://192.168.250.3:48081/actuator/health` 健康检查失败，未进入注册链路|`artifacts/dyq3-smoke/20260602-004654-agent07191-real16/smoke_run.log`、`artifacts/dyq3-smoke/20260602-004654-agent07191-real16-terminal.log`|
+|ADB 最小记录|阻塞：无在线设备，`adb shell getprop ro.product.model` 返回 `no devices/emulators found`|`artifacts/dyq3-smoke/20260602-004641-agent07191-heartbeat16/adb_minimal.log`|
+|依赖链复核|`DYQ-3` 仍为 `blocked`；直接强阻塞 `DYQ-10` 仍为 `blocked`；上游 `DYQ-25` 当前为 `todo`；`DYQ-9` 与 `DYQ-139` 已 done 但历史 blocker 关系仍在；`DYQ-5` 仍被 `DYQ-3` 阻塞|Paperclip issue/relation 快照：2026-06-02 00:46 +0800|
+
 ## 6. 审计日志
+- 2026-06-02 00:46:41 +0800：十六次复跑本地 Mock 端侧闭环，证据目录 `artifacts/dyq3-smoke/20260602-004641-agent07191-heartbeat16/`。
+- 2026-06-02 00:46:54 +0800：十六次复跑真实 dev 后端 `http://192.168.250.3:48081`，健康检查失败，证据目录 `artifacts/dyq3-smoke/20260602-004654-agent07191-real16/`。
 - 2026-06-02 00:39:13 +0800：十五次复跑本地 Mock 端侧闭环，证据目录 `artifacts/dyq3-smoke/20260602-003913-agent07191-heartbeat15/`。
 - 2026-06-02 00:39:24 +0800：十五次复跑真实 dev 后端 `http://192.168.250.3:48081`，健康检查失败，证据目录 `artifacts/dyq3-smoke/20260602-003924-agent07191-real15/`。
 - 2026-06-02 00:31:13 +0800：十四次复跑本地 Mock 端侧闭环，证据目录 `artifacts/dyq3-smoke/20260602-003113-agent07191-heartbeat14/`。
