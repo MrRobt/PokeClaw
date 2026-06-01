@@ -117,6 +117,19 @@ assert_http() {
   fi
 }
 
+assert_body_code() {
+  local name="$1"
+  local expected="$2"
+  local actual
+  actual="$(json_get "$RESP_DIR/${name}.json" "code")"
+  if [[ "$actual" == "$expected" ]]; then
+    echo "[PASS] $name body.code=$expected" | tee -a "$RUN_LOG"
+  else
+    echo "[FAIL] $name 期望body.code=$expected, 实际=$actual" | tee -a "$RUN_LOG"
+    return 1
+  fi
+}
+
 if [[ "$HEALTH_CHECK" == "1" ]]; then
   wait_health
 else
@@ -130,6 +143,7 @@ HEARTBEAT_BODY='{"batteryLevel":78,"isCharging":false,"networkType":"wifi"}'
 # 1) 设备注册
 request register POST /api/claw-device/register "$REGISTER_BODY"
 assert_http register 200
+assert_body_code register 200
 DEVICE_TOKEN="$(json_get "$RESP_DIR/register.json" "data.deviceToken")"
 [[ -n "$DEVICE_TOKEN" ]] || { echo "[FAIL] 注册未返回 deviceToken" | tee -a "$RUN_LOG"; exit 1; }
 echo "[PASS] 注册返回 deviceToken" | tee -a "$RUN_LOG"
@@ -137,12 +151,14 @@ echo "[PASS] 注册返回 deviceToken" | tee -a "$RUN_LOG"
 # 2) 心跳
 request heartbeat POST /api/claw-device/heartbeat "$HEARTBEAT_BODY" "$DEVICE_TOKEN"
 assert_http heartbeat 200
+assert_body_code heartbeat 200
 PENDING_COUNT="$(json_get "$RESP_DIR/heartbeat.json" "data.pendingTaskCount")"
 echo "[INFO] pendingTaskCount=$PENDING_COUNT" | tee -a "$RUN_LOG"
 
 # 3) 拉取待处理任务（云端下发）
 request pending GET "/api/claw-device/devices/$DEVICE_ID/pending-tasks" "" "$DEVICE_TOKEN"
 assert_http pending 200
+assert_body_code pending 200
 TASK_UUID="$(json_get "$RESP_DIR/pending.json" "data.0.uuid")"
 [[ -n "$TASK_UUID" ]] || { echo "[FAIL] 未拉取到任务uuid" | tee -a "$RUN_LOG"; exit 1; }
 echo "[PASS] 拉取到任务 taskUuid=$TASK_UUID" | tee -a "$RUN_LOG"
@@ -151,6 +167,7 @@ echo "[PASS] 拉取到任务 taskUuid=$TASK_UUID" | tee -a "$RUN_LOG"
 RESULT_BODY="{\"status\":\"SUCCESS\",\"result\":\"DYQ-3最小链路执行成功\",\"executionTimeMs\":321,\"modelUsed\":\"local\"}"
 request result POST "/api/claw-device/tasks/$TASK_UUID/result" "$RESULT_BODY" "$DEVICE_TOKEN"
 assert_http result 200
+assert_body_code result 200
 echo "[PASS] 任务结果已回传 taskUuid=$TASK_UUID" | tee -a "$RUN_LOG"
 
 # 5) 异常场景：缺失/无效token（用户可见报错）
