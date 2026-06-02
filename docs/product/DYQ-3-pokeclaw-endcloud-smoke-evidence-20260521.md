@@ -826,6 +826,8 @@ adb shell exitCode=1
 
 - 2026-06-02 08:48:24 +0800：本轮心跳复跑本地 Mock 端侧闭环，证据目录 `artifacts/dyq3-smoke/20260602-084824-agent07191-heartbeat-current/mock/`；注册/心跳/任务拉取/结果回传均 HTTP 200 且 body.code=200，无令牌/坏令牌业务码401，断网 curl exit=7；真实 dev 后端 `http://192.168.250.3:48081` 健康检查失败退出码1，证据目录 `artifacts/dyq3-smoke/20260602-084824-agent07191-heartbeat-current/real/`；补充探测四地址健康/注册路径均 `http=000 curl exit=7`，证据 `artifacts/dyq3-smoke/20260602-084824-agent07191-heartbeat-current/probes.log`；ADB 仍无在线设备。
 
+- 2026-06-02 09:48 +0800：八十次复跑本地 Mock 端侧闭环，证据目录 `artifacts/dyq3-smoke/20260602-0948-agent07191-heartbeat80/mock/`；注册/心跳/任务拉取/结果回传均 HTTP 200 且 body.code=200，无令牌/坏令牌业务码401，断网 curl exit=7；真实 dev 后端 `http://192.168.250.3:48081` 健康检查失败退出码1，证据目录 `artifacts/dyq3-smoke/20260602-0948-agent07191-heartbeat80/real/`；补充探测四地址健康/注册路径均 `http=000 curl exit=7`，证据 `artifacts/dyq3-smoke/20260602-0948-agent07191-heartbeat80/probes.log`；ADB 仍无在线设备。
+
 ## 7. 阻塞态处置（2026-05-21）
 - 最新指令（2026-05-21）：`DYQ-3` 保持 `blocked`，等待依赖子任务完成后解锁。
 - 阻塞依赖与责任人：
