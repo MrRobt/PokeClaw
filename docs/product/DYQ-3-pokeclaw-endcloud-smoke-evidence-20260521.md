@@ -17,6 +17,14 @@
 - `scripts/dyq3-endcloud-smoke.sh`：新增弱网/断网连接失败证据采集（`heartbeat_network_down.err`）。
 - `artifacts/dyq3-smoke/20260521-225727/*`：第二轮执行生成证据（含新增弱网错误原始输出）。
 
+### 1.2 2026-06-02 第七十九次心跳复核
+- `bash -n scripts/dyq3-endcloud-smoke.sh`：通过。
+- `MOCK_PORT=18179 USE_MOCK_BACKEND=1 bash scripts/dyq3-endcloud-smoke.sh artifacts/dyq3-smoke/20260602-0942-agent07191-heartbeat79/mock`：通过，注册、心跳、待处理任务拉取、结果回传均 HTTP 200 且 `body.code=200`；无令牌/坏令牌返回业务码401；断网场景 curl exit=7。
+- `USE_MOCK_BACKEND=0 DYQ_BASE_URL=http://192.168.250.3:48081 HEALTH_PATH=/actuator/health bash scripts/dyq3-endcloud-smoke.sh artifacts/dyq3-smoke/20260602-0942-agent07191-heartbeat79/real`：健康检查失败退出码1，未进入真实注册链路。
+- 四地址探测：`127.0.0.1:48081/8080`、`192.168.250.3:48081/8080` 的 `/actuator/health`、`/admin-api/actuator/health`、`/api/claw-device/register` 均 `http=000`、curl exit=7。
+- ADB：`adb devices -l` 仍无在线设备。
+- 结论：端侧 Mock 闭环稳定；真实端云闭环仍被后端实例未监听与无真机设备强阻塞，DYQ-3 保持 blocked。
+
 ## 2. 验证命令
 ```bash
 # 1) 执行最小冒烟（自动启动mock后端）
