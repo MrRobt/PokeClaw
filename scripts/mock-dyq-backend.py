@@ -45,8 +45,13 @@ def health_check():
 def device_register():
     """设备注册端点"""
     try:
-        body = request.get_json() or {}
-        device_id = body.get('deviceId', str(uuid.uuid4()))
+        body = request.get_json(silent=True)
+        if body is None:
+            return make_response(code=400, msg="请求体无效：需要JSON格式")
+        
+        device_id = body.get('deviceId')
+        if not device_id:
+            return make_response(code=400, msg="缺少必填字段: deviceId")
         
         device_info = {
             "deviceId": device_id,
@@ -59,15 +64,38 @@ def device_register():
             "status": "ONLINE"
         }
         
-        devices[device_id] = device_info
-        tokens[MOUSE_DEVICE_TOKEN] = device_id
-        tokens[MOUSE_REFRESH_TOKEN] = device_id
+        # 每个设备独立生成token
+        dev_token = "mock-device-token-" + str(uuid.uuid4())[:8]
+        refresh_token = "mock-refresh-token-" + str(uuid.uuid4())[:8]
         
-        print(f"[注册] 设备: {device_id}, 名称: {device_info['deviceName']}")
+        devices[device_id] = device_info
+        devices[device_id]["deviceToken"] = dev_token
+        devices[device_id]["refreshToken"] = refresh_token
+        tokens[dev_token] = device_id
+        tokens[refresh_token] = device_id
+        
+        # 为每个注册设备预置一个测试任务
+        if device_id not in [t.get("deviceId") for t in tasks.values() if t["status"] == "PENDING"]:
+            task_uuid = str(uuid.uuid4())
+            tasks[task_uuid] = {
+                "uuid": task_uuid,
+                "taskUuid": task_uuid,
+                "deviceId": device_id,
+                "type": "SIMPLE_ACTION",
+                "command": "打开设置查看电量",
+                "mode": "TASK",
+                "payload": {"action": "open_app", "packageName": "com.android.settings"},
+                "status": "PENDING",
+                "priority": "NORMAL",
+                "createdAt": int(time.time() * 1000),
+                "createdAtIso": datetime.now().isoformat()
+            }
+        
+        print(f"[注册] 设备: {device_id}, 名称: {device_info['deviceName']}, token: {dev_token}")
         
         return make_response(data={
-            "deviceToken": MOUSE_DEVICE_TOKEN,
-            "refreshToken": MOUSE_REFRESH_TOKEN,
+            "deviceToken": dev_token,
+            "refreshToken": refresh_token,
             "expiresIn": 3600,
             "deviceId": device_id
         })
@@ -90,7 +118,7 @@ def device_heartbeat():
         if not device_id:
             return make_response(code=401, msg="令牌无效")
         
-        body = request.get_json() or {}
+        body = request.get_json(silent=True) or {}
         
         # 更新设备状态
         if device_id in devices:
@@ -99,24 +127,8 @@ def device_heartbeat():
             devices[device_id]['isCharging'] = body.get('isCharging', False)
             devices[device_id]['networkType'] = body.get('networkType', 'unknown')
         
-        # 生成测试任务（每5次心跳生成一个任务）
-        pending_count = 0
-        if len(tasks) < 3:
-            task_uuid = str(uuid.uuid4())
-            tasks[task_uuid] = {
-                "uuid": task_uuid,
-                "taskUuid": task_uuid,
-                "deviceId": device_id,
-                "type": "SIMPLE_ACTION",
-                "command": "打开设置查看电量",
-                "mode": "TASK",
-                "payload": {"action": "open_app", "packageName": "com.android.settings"},
-                "status": "PENDING",
-                "priority": "NORMAL",
-                "createdAt": int(time.time() * 1000),
-                "createdAtIso": datetime.now().isoformat()
-            }
-            pending_count = 1
+        # 计算该设备的待处理任务数
+        pending_count = len([t for t in tasks.values() if t['deviceId'] == device_id and t['status'] == 'PENDING'])
         
         print(f"[心跳] 设备: {device_id}, 电量: {body.get('batteryLevel')}%, 网络: {body.get('networkType')}")
         

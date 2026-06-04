@@ -21,7 +21,25 @@ NETWORK_ERR_FILE="$RESP_DIR/heartbeat_network_down.err"
 
 mkdir -p "$OUT_DIR" "$RESP_DIR"
 
+pick_free_port() {
+  python3 - <<'PY'
+import socket
+with socket.socket() as s:
+    s.bind(('127.0.0.1', 0))
+    print(s.getsockname()[1])
+PY
+}
+
+if [[ "$USE_MOCK_BACKEND" == "1" && -z "${DYQ_BASE_URL:-}" ]] && lsof -i TCP:"$MOCK_PORT" -sTCP:LISTEN -t >/dev/null 2>&1; then
+  ORIGINAL_MOCK_PORT="$MOCK_PORT"
+  MOCK_PORT="$(pick_free_port)"
+  BASE_URL="http://127.0.0.1:$MOCK_PORT"
+fi
+
 echo "[INFO] 输出目录: $OUT_DIR" | tee -a "$RUN_LOG"
+if [[ -n "${ORIGINAL_MOCK_PORT:-}" ]]; then
+  echo "[WARN] 默认 mock 端口 $ORIGINAL_MOCK_PORT 已被占用，自动切换到 $MOCK_PORT" | tee -a "$RUN_LOG"
+fi
 echo "[INFO] BASE_URL: $BASE_URL" | tee -a "$RUN_LOG"
 
 MOCK_PID=""
@@ -41,17 +59,52 @@ else
   echo "[INFO] 跳过启动本地mock，使用外部后端: $BASE_URL" | tee -a "$RUN_LOG"
 fi
 
+health_response_ok() {
+  local body_file="$1"
+  python3 - "$body_file" <<'PY'
+import json, sys
+from pathlib import Path
+
+body = Path(sys.argv[1]).read_text(encoding='utf-8').strip()
+if not body:
+    raise SystemExit(1)
+
+try:
+    obj = json.loads(body)
+except json.JSONDecodeError:
+    raise SystemExit(1)
+
+if isinstance(obj, dict):
+    status = obj.get("status")
+    if status == "UP":
+        raise SystemExit(0)
+    code = obj.get("code")
+    if code in (0, 200, "0", "200"):
+        raise SystemExit(0)
+
+raise SystemExit(1)
+PY
+}
+
 wait_health() {
   local retry=0
+  local health_body="$RESP_DIR/health_check.json"
+  local health_code="$RESP_DIR/health_check.code"
   while (( retry < 30 )); do
-    if curl -fsS "$BASE_URL$HEALTH_PATH" >/dev/null 2>&1; then
-      echo "[PASS] 健康检查通过" | tee -a "$RUN_LOG"
-      return 0
+    if curl -sS -o "$health_body" -w "%{http_code}" "$BASE_URL$HEALTH_PATH" > "$health_code"; then
+      local http_code
+      http_code="$(cat "$health_code")"
+      if [[ "$http_code" == "200" ]] && health_response_ok "$health_body"; then
+        echo "[PASS] 健康检查通过" | tee -a "$RUN_LOG"
+        return 0
+      fi
     fi
     retry=$((retry + 1))
     sleep 1
   done
-  echo "[FAIL] 健康检查失败: $BASE_URL$HEALTH_PATH" | tee -a "$RUN_LOG"
+  local final_code="000"
+  [[ -f "$health_code" ]] && final_code="$(cat "$health_code")"
+  echo "[FAIL] 健康检查失败: $BASE_URL$HEALTH_PATH (HTTP=$final_code)" | tee -a "$RUN_LOG"
   return 1
 }
 
@@ -119,15 +172,18 @@ assert_http() {
 
 assert_body_code() {
   local name="$1"
-  local expected="$2"
+  local expected_csv="$2"
   local actual
   actual="$(json_get "$RESP_DIR/${name}.json" "code")"
-  if [[ "$actual" == "$expected" ]]; then
-    echo "[PASS] $name body.code=$expected" | tee -a "$RUN_LOG"
-  else
-    echo "[FAIL] $name 期望body.code=$expected, 实际=$actual" | tee -a "$RUN_LOG"
-    return 1
-  fi
+  IFS=',' read -r -a expected_list <<< "$expected_csv"
+  for expected in "${expected_list[@]}"; do
+    if [[ "$actual" == "$expected" ]]; then
+      echo "[PASS] $name body.code 命中允许值=$expected_csv（实际=$actual）" | tee -a "$RUN_LOG"
+      return 0
+    fi
+  done
+  echo "[FAIL] $name 期望body.code属于{$expected_csv}, 实际=$actual" | tee -a "$RUN_LOG"
+  return 1
 }
 
 if [[ "$HEALTH_CHECK" == "1" ]]; then
@@ -143,7 +199,7 @@ HEARTBEAT_BODY='{"batteryLevel":78,"isCharging":false,"networkType":"wifi"}'
 # 1) 设备注册
 request register POST /api/claw-device/register "$REGISTER_BODY"
 assert_http register 200
-assert_body_code register 200
+assert_body_code register 0,200
 DEVICE_TOKEN="$(json_get "$RESP_DIR/register.json" "data.deviceToken")"
 [[ -n "$DEVICE_TOKEN" ]] || { echo "[FAIL] 注册未返回 deviceToken" | tee -a "$RUN_LOG"; exit 1; }
 echo "[PASS] 注册返回 deviceToken" | tee -a "$RUN_LOG"
@@ -151,14 +207,14 @@ echo "[PASS] 注册返回 deviceToken" | tee -a "$RUN_LOG"
 # 2) 心跳
 request heartbeat POST /api/claw-device/heartbeat "$HEARTBEAT_BODY" "$DEVICE_TOKEN"
 assert_http heartbeat 200
-assert_body_code heartbeat 200
+assert_body_code heartbeat 0,200
 PENDING_COUNT="$(json_get "$RESP_DIR/heartbeat.json" "data.pendingTaskCount")"
 echo "[INFO] pendingTaskCount=$PENDING_COUNT" | tee -a "$RUN_LOG"
 
 # 3) 拉取待处理任务（云端下发）
 request pending GET "/api/claw-device/devices/$DEVICE_ID/pending-tasks" "" "$DEVICE_TOKEN"
 assert_http pending 200
-assert_body_code pending 200
+assert_body_code pending 0,200
 TASK_UUID="$(json_get "$RESP_DIR/pending.json" "data.0.uuid")"
 [[ -n "$TASK_UUID" ]] || { echo "[FAIL] 未拉取到任务uuid" | tee -a "$RUN_LOG"; exit 1; }
 echo "[PASS] 拉取到任务 taskUuid=$TASK_UUID" | tee -a "$RUN_LOG"
@@ -167,7 +223,7 @@ echo "[PASS] 拉取到任务 taskUuid=$TASK_UUID" | tee -a "$RUN_LOG"
 RESULT_BODY="{\"status\":\"SUCCESS\",\"result\":\"DYQ-3最小链路执行成功\",\"executionTimeMs\":321,\"modelUsed\":\"local\"}"
 request result POST "/api/claw-device/tasks/$TASK_UUID/result" "$RESULT_BODY" "$DEVICE_TOKEN"
 assert_http result 200
-assert_body_code result 200
+assert_body_code result 0,200
 echo "[PASS] 任务结果已回传 taskUuid=$TASK_UUID" | tee -a "$RUN_LOG"
 
 # 5) 异常场景：缺失/无效token（用户可见报错）
