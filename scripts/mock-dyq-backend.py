@@ -61,6 +61,7 @@ def device_register():
         
         devices[device_id] = device_info
         tokens[MOUSE_DEVICE_TOKEN] = device_id
+        tokens[MOUSE_REFRESH_TOKEN] = device_id
         
         print(f"[注册] 设备: {device_id}, 名称: {device_info['deviceName']}")
         
@@ -233,11 +234,18 @@ def refresh_token():
         body = request.get_json() or {}
         old_refresh = body.get('refreshToken')
         
-        # 简化逻辑：只要请求就返回新令牌
+        # 简化逻辑：查找旧refreshToken对应的设备，注册新token
+        old_token = body.get('deviceToken', '')
+        device_id = tokens.get(old_token) or tokens.get(old_refresh)
+        
         new_token = "mock-device-token-" + str(uuid.uuid4())[:8]
         new_refresh = "mock-refresh-token-" + str(uuid.uuid4())[:8]
         
-        print(f"[刷新令牌] 旧令牌刷新")
+        # 注册新令牌到映射
+        if device_id:
+            tokens[new_token] = device_id
+        
+        print(f"[刷新令牌] 设备={device_id}, 新令牌已注册")
         
         return make_response(data={
             "deviceToken": new_token,
