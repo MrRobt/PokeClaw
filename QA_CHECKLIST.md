@@ -3,6 +3,7 @@
 Every build must pass ALL checks before shipping.
 
 ## QA Debug Changelog
+| 2026-06-04 | BLOCKED | DYQ-3 | 【Android】PokeClaw端侧执行链路商业化验收：第八十三次心跳复核；`MOCK_PORT=18080 USE_MOCK_BACKEND=1 bash scripts/dyq3-endcloud-smoke.sh artifacts/dyq3-smoke/20260604-1430-agent07191-heartbeat83-mock` 端侧链路7/7全PASS（注册/心跳/任务拉取/结果回传/无token/坏token/断网）；真实后端 `127.0.0.1:48080` 健康检查通过（200）但register仍返回500系统异常（`{"code":500,"data":null,"msg":"系统异常"}`）；DYQ-184仍in_progress（小龙负责后端register修复）；DYQ-25仍todo（白名单未部署）；端侧实现完成，阻塞点在后端：register 500需小龙排查+401需DYQ-25部署白名单；证据 `artifacts/dyq3-smoke/20260604-1430-agent07191-heartbeat83-mock/`。 |
 
 | 日期 | 状态 | 问题编号 | 描述 |
 |------|------|----------|------|

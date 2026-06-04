@@ -844,3 +844,24 @@ adb shell exitCode=1
   - 结果与风险
   - 待验证清单收敛状态
   - 转 `in_review` 申请说明
+
+## 5.81 2026-06-04 八十一次心跳复核证据
+
+|项|结果|证据|
+|---|---|---|
+|脚本语法检查|通过：`bash -n scripts/dyq3-endcloud-smoke.sh` 无报错|终端执行记录：2026-06-04 12:18|
+|本地 Mock 端侧闭环|通过：注册、心跳、待处理任务拉取、任务结果回传均 HTTP 200 且 `body.code=200`；无令牌/坏令牌返回业务码 401；断网场景 curl exit=7|`artifacts/dyq3-smoke/20260604-1213-agent07191-heartbeat80/mock/summary.md`|
+|真实 dev 后端|**重大进展**：127.0.0.1:48080 后端已启动（Java PID 196117），白名单已生效（register 返回 500 而非 401）；但 register 处理崩溃（500 系统异常），根因：dyqclaw 库缺少 `infra_job_log` 表；heartbeat/pending-tasks/result 仍返回 401（需设备认证 token，需 register 先成功）|`artifacts/dyq3-smoke/20260604-121753-agent07191-real-backend-check/smoke_run.log`|
+|ADB 最小记录|阻塞：无在线设备，`adb devices -l` 空|终端执行记录：2026-06-04 12:18|
+|依赖链复核|`DYQ-3` 当前 `in_progress`；直接阻塞 `DYQ-10` 已 `done`、`DYQ-9` 已 `done`；**核心卡点转为 DYQ-184**（小龙负责的后端接口支持），需修复 `infra_job_log` 表缺失后 register 才能返回 deviceToken|Paperclip issue 快照：2026-06-04 12:18 +0800|
+
+
+## 5.82 2026-06-04 心跳复核证据（13:00 +0800）
+
+|项|结果|证据|
+|---|---|---|
+|Mock 端侧闭环|**通过**：注册/心跳/任务拉取/结果回传均 HTTP 200 且 body.code=200；无令牌/坏令牌返回 401；断网 curl exit=7|`artifacts/dyq3-smoke/20260604-125839/summary.md`|
+|真实 dev 后端|**阻塞**：dyq-server-hermes 进程（PID 231676）启动失败，MySQL 连接拒绝 `Access denied for user 'root'@'192.168.253.4' (using password: NO)`，服务未监听任何端口|`/root/logs/dyq-server-hermes-restart2.log`|
+|根因|1) MySQL 密码可能被 YAML `%2` 特殊字符解释破坏；2) 或 Nacos 远程配置覆盖了本地数据源配置；需小龙排查并修复|日志 `DruidDataSource:599`|
+|ADB|阻塞：无在线设备|终端 `adb devices -l`|
+|依赖链|DYQ-3 in_progress；DYQ-9 done；DYQ-10 done；**核心卡点 DYQ-184**（小龙 in_progress）|Paperclip 快照|
