@@ -865,3 +865,13 @@ adb shell exitCode=1
 |根因|1) MySQL 密码可能被 YAML `%2` 特殊字符解释破坏；2) 或 Nacos 远程配置覆盖了本地数据源配置；需小龙排查并修复|日志 `DruidDataSource:599`|
 |ADB|阻塞：无在线设备|终端 `adb devices -l`|
 |依赖链|DYQ-3 in_progress；DYQ-9 done；DYQ-10 done；**核心卡点 DYQ-184**（小龙 in_progress）|Paperclip 快照|
+
+## 5.83 2026-06-04 心跳复核证据（13:30 +0800）
+
+|项|结果|证据|
+|---|---|---|
+|Mock 端侧闭环|**通过**：注册/心跳/任务拉取/结果回传均 HTTP 200 且 body.code=200；无令牌/坏令牌返回 401；断网 curl exit=7|`artifacts/dyq3-smoke/20260604-130529/summary.md`|
+|真实 dev 后端|**阻塞**：dyq-server-hermes（PID 234741）启动崩溃，48080 端口未监听。两个根因：(a) MySQL 连接被拒 `Access denied for user root@192.168.253.4 (using password: YES)`；(b) Spring Bean 缺失 `NoSuchBeanDefinitionException: VectorStore`|`/root/logs/dyq-server-hermes.log`|
+|ADB|阻塞：无在线设备|终端 `adb devices -l`|
+|阻塞链|DYQ-3 in_progress；DYQ-9 done；DYQ-10 done；**核心卡点 DYQ-184**（小龙 in_progress）|Paperclip 快照|
+|端侧就绪|端侧代码就绪，Mock 冒烟全绿，仅等待后端修复|本轮执行记录|
