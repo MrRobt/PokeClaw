@@ -4,8 +4,10 @@
 package io.agents.pokeclaw.cloud
 
 import io.agents.pokeclaw.cloud.model.PendingTaskItem
+import io.agents.pokeclaw.cloudnode.CloudExecutorTask
 import io.agents.pokeclaw.cloudnode.CloudTaskErrorCode
 import io.agents.pokeclaw.cloudnode.CloudTaskExecutionResult
+import io.agents.pokeclaw.cloudnode.CloudTaskExecutorBridge
 
 /**
  * 云端任务执行器接口。
@@ -37,11 +39,14 @@ interface CloudTaskExecutor {
  * 此实现需要 Android 运行时环境（无障碍服务、UI 线程），不可在纯 JVM 测试中使用。
  */
 class LocalAgentTaskExecutor(
-    private val modelProvider: () -> String = { "local" },
+    private val modelProvider: () -> String = { "local-bridge" },
+    private val deviceIdProvider: () -> String = { "cloud-local-device" },
+    private val nowProvider: () -> Long = { System.currentTimeMillis() },
+    private val bridge: CloudTaskExecutorBridge = CloudTaskExecutorBridge(),
 ) : CloudTaskExecutor {
 
     override suspend fun execute(task: PendingTaskItem): CloudTaskExecutionResult {
-        val command = task.command
+        val command = task.command.trim()
         if (command.isBlank()) {
             return CloudTaskExecutionResult.failure(
                 message = "任务指令为空",
@@ -50,18 +55,17 @@ class LocalAgentTaskExecutor(
             )
         }
 
-        // TODO: 接入 DefaultAgentService 执行任务
-        // 当前阶段：仅返回一个占位结果，标记为未实现
-        // 后续实现路径：
-        // 1. 通过 AgentServiceFactory 创建/复用 AgentService 实例
-        // 2. 包装 command 为 Agent 可识别的 prompt
-        // 3. 调用 executeTask(prompt, callback) 执行
-        // 4. 收集 callback 结果转化为 CloudTaskExecutionResult
-        return CloudTaskExecutionResult.failure(
-            message = "本地执行器尚未接入 AgentService，任务指令：$command",
-            errorCode = CloudTaskErrorCode.UNKNOWN,
-            retryable = false,
+        val cloudTask = CloudExecutorTask(
+            taskId = task.taskUuid,
+            deviceId = deviceIdProvider(),
+            instruction = command,
+            issuedAtMillis = task.createdAt.takeIf { it > 0L } ?: nowProvider(),
+            metadata = buildMap {
+                task.mode?.takeIf { it.isNotBlank() }?.let { put("mode", it) }
+                task.priority?.takeIf { it.isNotBlank() }?.let { put("priority", it) }
+            },
         )
+        return bridge.execute(cloudTask)
     }
 
     override fun getModelName(): String = modelProvider()
