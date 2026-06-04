@@ -3,15 +3,16 @@
 ## 目标
 验证 PokeClaw 端侧与 DYQ 后端 (48080) 的真实链路：register → 任务领取 → 结果回传。
 
-## 当前状态 (2026-06-05)
+## 当前状态 (2026-06-05 06:06)
 
 | 检查项 | 状态 | 说明 |
 |--------|------|------|
-| 后端 48080 健康检查 | ❌ 未就绪 | `curl /actuator/health` 无响应 |
+| 后端 48080 健康检查 | ❌ 未就绪 | 端口拒绝连接（连接失败: `curl (7) Could not connect`） |
 | 上游依赖 DYQ-204 | 🔄 in_progress | dyq-server 启动修复 |
 | 上游依赖 DYQ-229 | 🔄 in_progress | proxy_session_log DDL |
 | 端侧契约 | ✅ 已定义 | `api-contracts/device.openapi.yaml` |
 | 复验脚本 | ✅ 已创建 | `scripts/dyq230-real-cloud-recheck.sh` |
+| Mock 18080 | ✅ 已恢复 | 重启实例后注册、心跳、任务拉取、结果回传可触达 |
 
 ## 阻塞分析
 
@@ -224,31 +225,34 @@ bash scripts/dyq230-real-cloud-recheck.sh artifacts/dyq230-real/20260605-executi
 
 ### 真实后端 (48080) - 2026-06-05 (复核)
 ```bash
-bash scripts/dyq230-real-cloud-recheck.sh artifacts/dyq230-real/20260605
+bash scripts/dyq230-real-cloud-recheck.sh artifacts/dyq230-real/20260605-060621-realcheck
 ```
-**时间**: 2026-06-05 05:50:43
+**时间**: 2026-06-05 06:06:22
 **结果**: ❌ 阻塞于Step 1 - 健康检查
-**原因**: DYQ-204/DYQ-229 未完成，后端48080未启动
+**原因**: DYQ-204/DYQ-229 未完成，127.0.0.1:48080 未监听
 **响应**: `curl: (7) Failed to connect to 127.0.0.1 port 48080 after 0 ms: Could not connect to server`
-**证据**: 控制台输出（因连接拒绝未生成文件）
+**证据**: `artifacts/dyq230-real/20260605-060621-realcheck/health.json`
 
 ### Mock后端 (18080) - 2026-06-05
 ```bash
-DYQ_BASE_URL=http://127.0.0.1:18080 bash scripts/dyq230-real-cloud-recheck.sh artifacts/dyq230-mock/20260605-execution
+DYQ_BASE_URL=http://127.0.0.1:18080 bash scripts/dyq230-real-cloud-recheck.sh artifacts/dyq230-mock/20260605-060617-realcheck
 ```
-**结果**: ✅ 5步全部通过
-- Step 1 健康检查: code=200, status=UP
-- Step 2 设备注册: code=200, 获取deviceToken
-- Step 3 心跳: code=200, pendingTaskCount=1
-- Step 4 拉取任务: code=200, 获取1个任务（打开设置查看电量）
-- Step 5 结果回传: code=200, received=true
+**结果**: ⚠️ 5步可达（接口均返回HTTP 200，但code=200，与契约code=0存在差异）
+- Step1 健康检查: code=200, status=UP
+- Step2 设备注册: code=200, 获取deviceToken
+- Step3 心跳: code=200, pendingTaskCount=1
+- Step4 拉取任务: code=200, 获取1个任务（打开设置查看电量）
+- Step5 结果回传: code=200, received=true
 
-**证据目录**: `artifacts/dyq230-mock/20260605-execution/`
+**历史**: 之前一次复测中出现注册`HTTP 500`，已通过重启 `python3 scripts/mock-dyq-backend.py` 后恢复（日志中记录 `/tmp/dyq-mock-18080.log`）。
+
+**证据目录**: `artifacts/dyq230-mock/20260605-060617-realcheck/`
 - health.json / health.pretty.json
 - register.json
 - heartbeat.json
 - pending-tasks.json
 - submit-result.json
+
 
 ## 关键发现
 
@@ -280,5 +284,6 @@ DYQ_BASE_URL=http://127.0.0.1:18080 bash scripts/dyq230-real-cloud-recheck.sh ar
 
 ## 变更记录
 
+- 2026-06-05 (06:06): 复验脚本在模拟端口18080重启后端侧回放成功；真实端口48080仍拒绝连接（Step1失败）
 - 2026-06-05 (复核): 端侧工程师阿甲执行复核，后端48080仍未就绪，上游DYQ-204/DYQ-229进行中
 - 2026-06-05: 创建规划文档，确认后端未就绪阻塞
