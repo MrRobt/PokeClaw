@@ -139,7 +139,7 @@ request() {
   local auth_header=""
   if [[ -n "$token" ]]; then
     # 真实请求必须携带完整令牌；日志与汇报只写脱敏结果，不输出该变量值。
-    auth_header="Authorization: Bearer ${token}"
+    auth_header="Authorization: Bearer $token"
   fi
 
   if [[ -n "$body" && -n "$token" ]]; then
