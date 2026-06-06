@@ -190,6 +190,80 @@ class CloudExecutorNodeContractTest {
         assertEquals("1", run.experiencePayload["retryNextAttempt"])
     }
 
+    @Test
+    fun `本地闭环样例集会生成可读证据并覆盖六类端侧结果`() {
+        val sampleNames = listOf("成功执行", "可重试失败", "不可重试失败", "执行超时", "权限缺失", "离线缓存")
+        val samples = sampleNames.mapIndexed { index, name ->
+            LocalClosedLoopSampler.SampleResult(
+                name = name,
+                taskId = "task-${index + 1}",
+                instruction = "端侧本地闭环样例：$name",
+                reports = listOf(
+                    CloudTaskStatusReport(
+                        taskId = "task-${index + 1}",
+                        deviceId = "device-pixel-8",
+                        traceId = "trace-${index + 1}",
+                        status = CloudTaskStatus.RECEIVED,
+                        message = "已接收",
+                        occurredAtMillis = 1000L + index,
+                    ),
+                    CloudTaskStatusReport(
+                        taskId = "task-${index + 1}",
+                        deviceId = "device-pixel-8",
+                        traceId = "trace-${index + 1}",
+                        status = CloudTaskStatus.RUNNING,
+                        message = "执行中",
+                        occurredAtMillis = 2000L + index,
+                    ),
+                    CloudTaskStatusReport(
+                        taskId = "task-${index + 1}",
+                        deviceId = "device-pixel-8",
+                        traceId = "trace-${index + 1}",
+                        status = CloudTaskStatus.SUCCEEDED,
+                        message = "已完成",
+                        occurredAtMillis = 3000L + index,
+                    ),
+                ),
+                receipt = CloudTaskReceipt(
+                    requestId = "req-${index + 1}",
+                    taskId = "task-${index + 1}",
+                    deviceId = "device-pixel-8",
+                    traceId = "trace-${index + 1}",
+                    accepted = true,
+                    finalStatus = CloudTaskStatus.SUCCEEDED,
+                    message = "已完成",
+                    errorCode = CloudTaskErrorCode.NONE,
+                    retryable = false,
+                    artifacts = emptyList(),
+                    occurredAtMillis = 3000L + index,
+                ),
+                mockCloudPayload = mapOf("status" to "SUCCESS"),
+                experiencePayload = mapOf("outcome" to "SUCCESS"),
+                verificationPassed = true,
+            )
+        }
+        val report = LocalClosedLoopSampler.SampleReport(
+            timestamp = 80000L,
+            deviceId = "device-pixel-8",
+            samples = samples,
+            totalCount = samples.size,
+            passedCount = samples.count { it.verificationPassed },
+            failedCount = samples.count { !it.verificationPassed },
+        )
+        val evidence = report.toEvidenceLog()
+
+        assertEquals(6, report.totalCount)
+        assertEquals(6, report.passedCount)
+        assertEquals(0, report.failedCount)
+        assertTrue(evidence.contains("DYQ-28 本地闭环样例执行证据"))
+        assertTrue(evidence.contains("成功执行"))
+        assertTrue(evidence.contains("可重试失败"))
+        assertTrue(evidence.contains("不可重试失败"))
+        assertTrue(evidence.contains("执行超时"))
+        assertTrue(evidence.contains("权限缺失"))
+        assertTrue(evidence.contains("离线缓存"))
+    }
+
     private class FixedClock(private val values: List<Long>) : CloudExecutorClock {
         private var index = 0
         override fun nowMillis(): Long = values[index++].coerceAtLeast(0L)
