@@ -138,7 +138,8 @@ request() {
   local code_file="$RESP_DIR/${name}.code"
   local auth_header=""
   if [[ -n "$token" ]]; then
-    auth_header="Authorization: Bearer $token"
+    # 真实请求必须携带完整令牌；日志与汇报只写脱敏结果，不输出该变量值。
+    auth_header="Authorization: Bearer ${token}"
   fi
 
   if [[ -n "$body" && -n "$token" ]]; then
@@ -268,6 +269,7 @@ if [[ "${ADMIN_SEED_TASK:-0}" == "1" ]]; then
   ADMIN_TOKEN="$(json_get "$RESP_DIR/admin_login.json" "data.accessToken")"
   [[ -n "$ADMIN_TOKEN" ]] || { echo "[FAIL] 管理后台登录未返回 accessToken" | tee -a "$RUN_LOG"; exit 1; }
   ADMIN_EXECUTE_BODY="{\"command\":\"DYQ-3真实端云闭环种子 requestId=$DEVICE_ID eventId=round8\",\"mode\":\"auto\"}"
+  # 真实请求必须携带完整管理后台令牌；日志与汇报只写凭证来源文件和脱敏结果。
   admin_auth_header="Authorization: Bearer ${ADMIN_TOKEN}"
   curl -sS -o "$RESP_DIR/admin_execute.json" -w "%{http_code}" -X POST "$ADMIN_BASE_URL/admin-api/claw/device/$DEVICE_ID/execute" \
     -H "Content-Type: application/json" \
