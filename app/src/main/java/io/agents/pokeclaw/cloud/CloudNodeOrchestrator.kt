@@ -258,11 +258,17 @@ class CloudNodeOrchestrator(
         val errorDetail = if (!result.success) buildErrorDetail(result) else null
 
         // 上报结果
+        val artifacts = result.artifacts
+            .filter { it.isNotBlank() }
+            .joinToString(",")
+            .takeIf { it.isNotBlank() }
+
         val reportRequest = TaskResultRequest(
             status = statusReport,
             result = result.message.take(2048),
             errorMessage = if (!result.success) result.message.take(1024) else null,
             executionTimeMs = executionTimeMs,
+            evidenceUrls = artifacts,
             modelUsed = taskExecutor.getModelName(),
             // 错误回传字段（对齐云端错误上报协议）
             errorCategory = errorDetail?.category,
@@ -270,6 +276,7 @@ class CloudNodeOrchestrator(
             errorDetail = errorDetail?.detail,
             recoverable = errorDetail?.recoverable,
             suggestedAction = errorDetail?.suggestedAction,
+            logSnippet = buildResultLogSnippet(task, result, executionTimeMs),
         )
 
         try {
@@ -292,6 +299,23 @@ class CloudNodeOrchestrator(
             result.retryable -> TaskResultRequest.Status.FAILED
             else -> TaskResultRequest.Status.FAILED
         }
+    }
+
+    private fun buildResultLogSnippet(
+        task: PendingTaskItem,
+        result: CloudTaskExecutionResult,
+        executionTimeMs: Long,
+    ): String {
+        return buildString {
+            append("taskUuid=").append(task.taskUuid)
+            append(" status=").append(if (result.success) "SUCCESS" else "FAILED")
+            append(" durationMs=").append(executionTimeMs)
+            append(" errorCode=").append(result.errorCode.name)
+            if (result.artifacts.isNotEmpty()) {
+                append(" artifacts=").append(result.artifacts.joinToString(",").take(512))
+            }
+            append(" message=").append(result.message.take(512))
+        }.take(1024)
     }
 
     /**

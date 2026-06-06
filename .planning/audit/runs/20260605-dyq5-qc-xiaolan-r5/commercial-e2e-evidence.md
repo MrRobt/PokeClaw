@@ -1,204 +1,183 @@
-# 三端最小闭环联调验收包 — 小蓝QC第5轮心跳
+# DYQ-5 三端最小闭环联调验收包 — 心跳复核
 
-**日期**: 2026-06-04 21:00 CST
-**执行人**: 测试员小蓝（ec2afe67）
-**关联Issue**: DYQ-5
-**父Issue**: DYQ-1
-**阻塞说明**: DYQ-5 系统标记 blocked（因 DYQ-201 生产力审查），但该阻塞项是纸夹系统对 DYQ-3 端侧工程师阿甲的高流失率审查，不影响三端验收证据汇总。本报告持续产出。
+生成时间: 2026-06-05T06:30+08:00
+验证人: 测试员小蓝 (ec2afe67)
+状态: **blocked — 4个P0阻塞项，云端服务当前不可用**
 
 ---
 
-## 〇、环境即时探测（第5轮）
+## 一、三端实时运行状态（2026-06-05 06:25）
 
-| 探测项 | 结果 | 较上轮变化 |
-|--------|------|-----------|
-| dyq-server:48080 | ✅ 端口监听，PID 393151，运行20+分钟 | 与上轮相同，稳定 |
-| 健康检查 /actuator/health | ⚠️ 500 系统异常（业务体） | 无变化 |
-| 设备注册 /api/claw-device/register | ⚠️ 500 系统异常（Controller可达） | 无变化 |
-| Token刷新 /api/claw-device/token/refresh | ✅ 401 正确拒绝假token | 无变化 |
-| 心跳 /api/claw-device/heartbeat | ⚠️ 401 @PermitAll未生效 | 无变化 |
-| 管理后台 /admin-api/claw/device/list | ⚠️ 401 需管理员认证 | 无变化 |
-| OpenAPI /v3/api-docs/all | ✅ 3499端点暴露 | 无变化 |
-| ADB设备 | ❌ 无在线设备 | 无变化 |
-| DYQ-201（阻塞源） | 🔄 in_progress 生产力审查 | 分配给老周初审，不是我负责 |
-
-### 关键数据：OpenAPI端点统计
-
-| 模块 | 端点数 | 状态 |
-|------|--------|------|
-| claw | 52 | ✅ 已注册 |
-| device | 19 | ✅ 已注册 |
-| sandbox | 27 | ✅ 已注册 |
-| 总计 | 3499 | 含管理端+设备端+应用端 |
-
-### 关键数据：claw_device表
-
-| 指标 | 值 |
-|------|-----|
-| 记录数 | 16 |
-| 字段 device_token | varchar(512) |
-| 最早设备 | test-device-001 |
-| 最新设备 | pokeclaw-dyq3-20260604-151504 |
+| 端 | 服务 | 地址 | 状态 | 变化 |
+|---|---|---|---|---|
+| 云端 | dyq-server | :48080 | **不可用** | 上次运行中，本次已停 |
+| 云端 | Nacos | :8848 | **不可达** | 新发现 |
+| 云端 | MySQL | 192.168.250.3:3306 | 可达 | 无变化 |
+| 云端 | Redis | :6379 | 可达 | 无变化 |
+| WeFlow | controller | :8000 | 运行中 | 无变化 |
+| WeFlow | agent | :18700 | 运行中 | 无变化 |
+| PokeClaw | ADB | - | **无设备** | 无变化 |
 
 ---
 
-## 一、三端证据汇总
+## 二、各端成功证据
 
-### 1. 云端中枢（DYQ-2，负责人：阿盾）
+### 2.1 云端中枢 — 无新成功证据
 
-| # | 证据类型 | 具体内容 | 验证命令 | 结果 |
-|---|---------|----------|----------|------|
-| C-S1 ✅ | 管理端CRUD可用 | /admin-api/claw/ops/dashboard 200, /admin-api/claw/device/list 200, /admin-api/claw/skill/page 200 | `curl -H "Authorization: Bearer <admin_token>" http://127.0.0.1:48080/admin-api/claw/device/list` | 7/12管理端点200 |
-| C-S2 ✅ | 沙箱模板CRUD | 模板创建→查询→删除全通过 | 见阿盾验收报告 | 全通过 |
-| C-S3 ✅ | TLS证书校验 | 假证书被正确拒绝 Code=1030000008 | 见阿盾验收报告 | 正确拒绝 |
-| C-S4 ✅ | proxy_session_log补建 | 幂等DDL已落地，表结构27列 | `SELECT COUNT(*) FROM dyqclaw.proxy_session_log` | 表存在 |
-| C-F1 ⚠️ | 设备注册500 | Controller可达，Service层报错 | `curl -X POST http://127.0.0.1:48080/api/claw-device/register -H "Content-Type: application/json" -d '{"deviceId":"qc-test-001",...}'` | 500 |
-| C-F2 ⚠️ | 心跳@PermitAll未生效 | 设备认证Filter拦截 | `curl -X POST http://127.0.0.1:48080/api/claw-device/heartbeat -d '...'` | 401 |
-| C-F3 ⚠️ | OpenAPI前缀不一致 | spec写/sandbox/host/page，实际需/admin-api前缀 | 对照spec与swagger | 需修复 |
-| C-F4 ⚠️ | 健康检查返回500 | /actuator/health 业务层500 | `curl http://127.0.0.1:48080/actuator/health` | 500 |
+上次成功证据（2026-06-04 22:05）:
+- Swagger HTTP 200, 38组API文档可用
+- 52个Claw API已注册
+- 登录拒绝(401)符合安全预期
 
-### 2. 端侧PokeClaw（DYQ-3，负责人：阿甲）
+**本次**: dyq-server进程已不存在（原PID 407624已停），尝试重启但因Nacos不可达而卡在Spring初始化阶段，无法完成启动。
 
-| # | 证据类型 | 具体内容 | 验证命令 | 结果 |
-|---|---------|----------|----------|------|
-| P-S1 ✅ | Mock冒烟7/7全通过 | 注册+心跳+任务拉取+回传+401+401+断网异常 | `MOCK_PORT=18230 USE_MOCK_BACKEND=1 bash scripts/dyq3-endcloud-smoke.sh artifacts/dyq3-smoke/` | 7/7 PASS |
-| P-S2 ✅ | 26/26验收项全通过 | 设备注册、心跳稳定、云端闭环、弱网异常 | 见阿甲验收报告 | 全通过 |
-| P-S3 ✅ | QA_CHECKLIST补充 | Z13-Z15用例写入 | 见QA_CHECKLIST.md | 已补齐 |
-| P-S4 ✅ | LocalAgentTaskExecutor桥接 | CloudTaskExecutorBridge驱动 | ./gradlew :app:testDebugUnitTest | 通过 |
-| P-F1 ❌ | 真实后端48080不可达 | curl exit=7 | `USE_MOCK_BACKEND=0 DYQ_BASE_URL=http://127.0.0.1:48080 bash scripts/dyq3-endcloud-smoke.sh` | 健康检查超时 |
-| P-F2 ❌ | 无ADB真机 | 无法验证端侧UI真实交互 | `adb devices` | 空列表 |
+### 2.2 WeFlow微信 — 有新成功证据
 
-### 3. 微信WeFlow（DYQ-4，负责人：阿桥，状态：done）
+**验证时间**: 2026-06-05 06:25
+**验证命令**:
+```bash
+curl -sS 'http://127.0.0.1:8000/health'
+curl -sS 'http://127.0.0.1:8000/dyq/device-node/registration'
+curl -sS 'http://127.0.0.1:8000/dyq/device-node/heartbeat'
+curl -sS 'http://127.0.0.1:18700/openapi.json'
+```
 
-| # | 证据类型 | 具体内容 | 验证命令 | 结果 |
-|---|---------|----------|----------|------|
-| W-S1 ✅ | 实机GUI发送回传 | status=passed, mode=live, controller_ready=true | 见DYQ-7实机报告 | 通过 |
-| W-S2 ✅ | 109单元测试通过 | wechat-controller/tests/ | `python -m pytest wechat-controller/tests/ -q` | 109 passed |
-| W-S3 ✅ | 风险拦截策略 | requestId去重+自动发送白名单+冷却期+auto_send=false | test_policy.py | 通过 |
-| W-S4 ✅ | 设备节点契约 | WEFLOW_WECHAT+pull模式+7个能力映射 | test_dyq_device_node_contract.py | 通过 |
-| W-S5 ✅ | 控制面验证 | wechatControlService+wechatReplyService+HTTP路由 | `npm run wechat:control:verify` | 通过 |
-| W-F1 ⚠️ | 真实云端消费留痕 | 依赖dyq-server消费事件 | 依赖DYQ-8/DYQ-26 | 阻塞 |
+**结果**:
+- Controller health: controller_ready=true, upstream_ready=false
+- 设备节点注册协议: nodeType=WEFLOW_WECHAT, 5个能力声明
+- 心跳协议: status=online, nodeKey=weflow-local-winwechat-001
+- Agent端: 8个API可用(health/send-text/prepare-text/confirm-send/listener-start/stop/events/status)
+- 自动回复: 可响应（20个系统事件被正确跳过，blocked=true，error_code=SYSTEM_EVENT_SKIPPED）
+
+### 2.3 PokeClaw端侧 — 无新成功证据
+
+Mock闭环仍为上次记录。ADB无设备，端云闭环断。
 
 ---
 
-## 二、统一演示脚本v1（最小闭环步骤）
+## 三、各端失败/异常证据
 
-### 前置条件
-1. dyq-server:48080 运行且健康检查200
-2. 管理后台可登录（需admin密码）
-3. ADB设备在线（PokeClaw侧）
+### 3.1 云端中枢 — 关键异常（新）
 
-### 演示步骤
+**验证命令**:
+```bash
+# dyq-server进程检查
+ps aux | grep dyq-server.jar | grep -v grep
+# 返回空 — 进程已不存在
 
-| 步骤 | 端 | 输入 | 预期 | 失败注入点 |
-|------|-----|------|------|-----------|
-| 1. 云端创建任务 | 云端 | POST /admin-api/claw/device/{id}/execute | 任务创建成功 | 设备不在线→任务pending |
-| 2. 设备注册 | PokeClaw | POST /api/claw-device/register | 200+deviceToken | Service层500→注册失败 |
-| 3. 设备心跳 | PokeClaw | POST /api/claw-device/heartbeat | 200+pendingTaskCount | @PermitAll未生效→401 |
-| 4. 拉取待处理任务 | PokeClaw | GET /api/claw-device/devices/{id}/pending-tasks | 200+任务列表 | Token无效→401 |
-| 5. 执行任务并回传 | PokeClaw | POST /api/claw-device/tasks/{uuid}/result | 200+received=True | 任务不存在→404 |
-| 6. 微信消息触发 | WeFlow | 微信收到消息→AI思考→GUI确认发送 | 消息发送成功+回传dyq | AI思考失败→超时 |
-| 7. 管理台查看 | 云端 | GET /admin-api/claw/device/list | 设备+任务+回传可见 | 无数据→空列表 |
+# Nacos可达性
+curl -sS 'http://127.0.0.1:8848/nacos/'
+# 返回: Connection refused
+curl -sS 'http://192.168.250.3:8848/nacos/'
+# 返回: Connection timed out
 
-### 可复现命令（当前环境可用）
+# 启动尝试
+cd /mnt/e/code/dyq && java -jar dyq-server/target/dyq-server.jar --spring.profiles.active=dev
+# 卡在MiniDaoClassPathMapperScanner/Nacos注册阶段，无法完成启动
+```
+
+**结论**: dyq-server进程已崩溃/被杀，Nacos服务不可达导致无法重启。这是新增P0阻塞项。
+
+### 3.2 WeFlow微信 — 持续异常
+
+**验证命令**:
+```bash
+curl -sS 'http://127.0.0.1:8000/listener/status'
+```
+
+**结果**:
+```json
+{
+  "running": true,
+  "last_error": "BackendError: pyweixin: No module named 'pyweixin'",
+  "failure_count": 890,
+  "last_success_at": null
+}
+```
+
+**结论**: pyweixin模块仍未安装，微信监听连续失败890次。Controller层正常但桥接层不可用。
+
+### 3.3 PokeClaw端侧 — 持续异常
 
 ```bash
-# 1. 环境检查
-curl -sf http://127.0.0.1:48080/actuator/health
+adb devices
+# List of devices attached
+# (空列表)
+```
 
-# 2. 设备注册（当前500）
-curl -s -X POST http://127.0.0.1:48080/api/claw-device/register \
-  -H "Content-Type: application/json" \
-  -d '{"deviceId":"demo-001","deviceName":"演示设备","deviceModel":"Pixel 7","androidVersion":"14","appVersion":"1.0.0"}'
+**结论**: 仍无安卓设备连接，端侧执行无法实机验证。
 
-# 3. Token刷新（正确拒绝）
-curl -s -X POST http://127.0.0.1:48080/api/claw-device/token/refresh \
-  -H "Content-Type: application/json" \
-  -d '{"refreshToken":"fake-token"}'
+---
 
-# 4. 心跳（当前401）
-curl -s -X POST http://127.0.0.1:48080/api/claw-device/heartbeat \
-  -H "Content-Type: application/json" \
-  -d '{"batteryLevel":85,"isCharging":true}'
+## 四、P0阻塞项更新（4个，新增1个）
 
-# 5. PokeClaw Mock冒烟（当前7/7通过）
-cd /mnt/e/code/PokeClaw
-MOCK_PORT=18080 USE_MOCK_BACKEND=1 bash scripts/dyq3-endcloud-smoke.sh artifacts/dyq3-smoke/demo-run
+| 编号 | P0阻塞 | 影响 | 状态 | 变化 |
+|------|--------|------|------|------|
+| V01 | Nacos服务不可达 → dyq-server无法启动 | 云端中枢完全不可用 | **新增** | 上次未发现 |
+| V02 | 后端48081未监听 | PokeClaw真实注册链路断 | 未解决 | — |
+| V03 | ADB无真机设备 | 端侧执行无法实机验证 | 未解决 | — |
+| V04 | pyweixin模块缺失 | 微信GUI操控不可用 | 未解决 | failure_count从834增至890 |
 
-# 6. WeFlow单元测试
-cd /mnt/d/work/code/WeFlow
-python -m pytest wechat-controller/tests/ -q
+---
+
+## 五、可复现最小验证命令
+
+### 云端（当前失败）
+```bash
+# Nacos不可达检测
+python3 -c "import socket; s=socket.socket(); s.settimeout(2); s.connect(('127.0.0.1',8848))" 2>&1
+
+# dyq-server进程检查
+ps aux | grep dyq-server.jar | grep -v grep
+# 预期: 空（进程已停止）
+```
+
+### WeFlow（部分成功）
+```bash
+curl -sS 'http://127.0.0.1:8000/health'
+# 预期: controller_ready=true, upstream_ready=false, pywechat_imported=false
+
+curl -sS 'http://127.0.0.1:8000/dyq/device-node/registration'
+# 预期: nodeType=WEFLOW_WECHAT, 5个capabilities
+```
+
+### PokeClaw
+```bash
+adb devices
+# 预期: 空列表（无设备）
 ```
 
 ---
 
-## 三、风险清单（P0/P1分级）
+## 六、风险清单
 
-### P0 — 必须解除才能闭环演示
-
-| 编号 | 风险 | 影响 | 负责人 | 当前状态 |
-|------|------|------|--------|----------|
-| P0-1 | 设备注册接口500 | 三端闭环无法走通 | 后端小龙 | Controller可达，Service层报错 |
-| P0-2 | 心跳@PermitAll未生效 | 端侧无法维持连接 | 后端小龙 | 401拦截，需修复ClawDeviceAuthInterceptor |
-| P0-3 | /actuator/health返回500 | 健康检查不可用 | 后端小龙 | 业务层异常 |
-| P0-4 | 无ADB真机 | PokeClaw端侧UI无法验证 | 主人/运维 | 无在线设备 |
-
-### P1 — 影响完整度但不阻塞基本闭环
-
-| 编号 | 风险 | 影响 | 负责人 | 当前状态 |
-|------|------|------|--------|----------|
-| P1-1 | OpenAPI spec路径前缀不一致 | 前端/端侧按spec生成代码会404 | 老周 | sandbox.openapi.yaml缺/admin-api |
-| P1-2 | TLS证书字段varchar(64)不足 | 宿主机Docker TLS连接失败 | 阿盾 | 需ALTER→TEXT |
-| P1-3 | PokeClaw git推送状态待补齐 | 审计链不完整 | 阿甲 | 部分文件未提交 |
-| P1-4 | WeFlow真实云端消费留痕 | 产品验收通过但无端到端证据 | 小蓝/阿桥 | 依赖后端恢复 |
-| P1-5 | 管理后台admin密码未知 | 无法登录管理后台验证 | 主人 | 需重置或确认密码 |
-| P1-6 | claw_device.device_token存截断值 | 旧设备token不可用于认证 | 后端 | 16条记录中token为占位值 |
+| 级别 | 风险 | 影响 | 端 | 建议解法 |
+|------|------|------|----|----------|
+| P0 | Nacos不可达 | 云端完全不可用 | DYQ-2 | 启动Nacos或改本地配置 |
+| P0 | 后端48081未监听 | PokeClaw真实注册断 | DYQ-2/3 | 启动实例或修复路由 |
+| P0 | ADB无真机 | 端侧无法实机验证 | DYQ-3 | 接入安卓设备 |
+| P0 | pyweixin缺失 | 微信操控不可用 | DYQ-4 | pip install pyweixin |
+| P1 | dyq-server进程无自动恢复 | 服务不稳定 | DYQ-2 | 配置systemd/supervisor |
+| P1 | OpenAPI契约0命中(91/0) | 文档脱节 | DYQ-2 | 排查swagger扫描路径 |
 
 ---
 
-## 四、对比上次报告变化
+## 七、验收结论
 
-| 项 | 上轮（r4） | 本轮（r5） | 变化 |
-|----|-----------|-----------|------|
-| 48080 | 进程存在但端口未监听 | ✅ 端口监听 | 🎉 P0-1从r4部分突破→稳定 |
-| 设备注册 | 500 | 500（同） | 无变化 |
-| 心跳 | 401 | 401（同） | 无变化 |
-| OpenAPI端点 | 未统计 | 3499（Claw52+Device19+Sandbox27） | 新增数据 |
-| claw_device记录 | 未统计 | 16条 | 新增数据 |
-| DYQ-201阻塞 | 未分析 | 确认为生产力审查，不影响我 | 明确判断 |
+| 验收标准 | 达成情况 |
+|----------|----------|
+| 每端至少1条成功证据 | 部分达成 — WeFlow有新证据，云端/PokeClaw依赖上次 |
+| 每端至少1条失败/异常证据 | 达成 — 新增Nacos不可达证据 |
+| 可复现最小验证命令 | 达成 |
+| 统一风险清单(P0/P1) | 达成 — 4个P0 + 2个P1 |
 
----
-
-## 五、验证命令（可复现）
-
-```bash
-# 环境检查
-curl -sf http://127.0.0.1:48080/actuator/health
-
-# 设备注册
-curl -s -X POST http://127.0.0.1:48080/api/claw-device/register \
-  -H "Content-Type: application/json" \
-  -d '{"deviceId":"qc-xiaolan-005","deviceName":"小蓝测试","deviceModel":"Pixel 7","androidVersion":"14","appVersion":"1.0.0"}'
-
-# OpenAPI端点统计
-curl -sf http://127.0.0.1:48080/v3/api-docs/all | python3 -c "
-import sys,json; d=json.loads(sys.stdin.read()); paths=list(d.get('paths',{}).keys())
-print(f'Total: {len(paths)}, Claw: {len([p for p in paths if \"claw\" in p.lower()])}, Device: {len([p for p in paths if \"device\" in p.lower()])}, Sandbox: {len([p for p in paths if \"sandbox\" in p.lower()])}')
-"
-
-# 数据库检查
-mysql -h 192.168.250.3 -u root -p'.159159%2' --skip-ssl -e "SELECT COUNT(*) FROM dyqclaw.claw_device"
-
-# PokeClaw Mock冒烟
-cd /mnt/e/code/PokeClaw && MOCK_PORT=18080 USE_MOCK_BACKEND=1 bash scripts/dyq3-endcloud-smoke.sh artifacts/dyq3-smoke/r5-verify
-```
+**整体判定**: DYQ-5 保持 blocked。与上次相比，**Nacos不可达**成为新的P0阻塞项，导致云端从"部分可用"退化为"完全不可用"。解决顺序建议: ①启动Nacos → ②启动dyq-server → ③修复pyweixin → ④接入安卓设备。
 
 ---
 
-## 六、下一步建议
+## 八、历史证据索引
 
-1. **P0-1优先**：排查设备注册500——最可能是Service Bean注入失败或参数序列化问题，建议检查dyq-server启动日志中ClawDeviceController相关错误
-2. **P0-2**：修复ClawDeviceAuthInterceptor对@PermitAll请求的拦截
-3. **P0-3**：修复/actuator/health的业务层500
-4. **DYQ-201处置**：建议将DYQ-5的阻塞源从DYQ-201移除，生产力审查不应阻塞三端验收
-5. **P0-4**：提供ADB真机或模拟器用于PokeClaw端侧验证
+- 上次验收: `/mnt/e/code/PokeClaw/.planning/audit/runs/DYQ-5-20260604-三端闭环联调验收/commercial-e2e-evidence.md`
+- DYQ-2: `/mnt/e/code/dyq/.planning/audit/runs/DYQ-2-20260521-云端沙箱最小冒烟/SMOKE-EVIDENCE.md`
+- DYQ-3: `/mnt/e/code/PokeClaw/docs/product/DYQ-3-pokeclaw-endcloud-smoke-evidence-20260521.md`
+- DYQ-4: `/mnt/d/work/code/weflow-wechat-autopilot/docs/qa/dyq-4-weflow-min-smoke-20260521.md`
