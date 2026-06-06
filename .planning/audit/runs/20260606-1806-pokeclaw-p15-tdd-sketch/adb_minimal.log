@@ -1,0 +1,8 @@
+===== ADB 最小验证 =====
+2026-06-06 18:07:11 +0800
+--- adb devices -l ---
+List of devices attached
+
+--- adb shell getprop ro.product.model (若无设备会失败) ---
+adb: no devices/emulators found
+adb shell exitCode=1
