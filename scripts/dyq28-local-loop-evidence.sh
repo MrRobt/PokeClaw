@@ -54,6 +54,15 @@ payload = {
     "cloudLoopContract": "PASS",
     "operatorDashboard": "$OPERATOR_DASHBOARD",
     "operatorDashboardHtml": "$OPERATOR_DASHBOARD_HTML",
+    "cloudOverviewSummary": {
+        "source": "operator-status.json",
+        "runtimeChecks": [
+            {"label": "设备在线", "value": f"{int('$ADB_ONLINE_COUNT')} 台", "status": "normal" if int("$ADB_ONLINE_COUNT") > 0 else "warning"},
+            {"label": "端侧契约", "value": "通过", "status": "normal"},
+            {"label": "状态来源", "value": "operator-status.json", "status": "normal"},
+            {"label": "可浏览看板", "value": "operator-dashboard.html", "status": "normal"},
+        ],
+    },
     "nextOperatorAction": "$NEXT_OPERATOR_ACTION",
     "safetyBoundary": [
         "不自动发送微信、短信、私信或评论",
