@@ -138,7 +138,7 @@ request() {
   local code_file="$RESP_DIR/${name}.code"
   local auth_header=""
   if [[ -n "$token" ]]; then
-    auth_header="Authorization: Bearer ${token}"
+    auth_header="Authorization: Bearer $token"
   fi
 
   if [[ -n "$body" && -n "$token" ]]; then
