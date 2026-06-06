@@ -215,8 +215,43 @@ echo "[INFO] pendingTaskCount=$PENDING_COUNT" | tee -a "$RUN_LOG"
 request pending GET "/api/claw-device/devices/$DEVICE_ID/pending-tasks" "" "$DEVICE_TOKEN"
 assert_http pending 200
 assert_body_code pending 0,200
-TASK_UUID="$(json_get "$RESP_DIR/pending.json" "data.0.uuid")"
-[[ -n "$TASK_UUID" ]] || { echo "[FAIL] 未拉取到任务uuid" | tee -a "$RUN_LOG"; exit 1; }
+TASK_UUID="$(python3 - "$RESP_DIR/pending.json" <<'PY'
+import json, sys
+from pathlib import Path
+obj = json.loads(Path(sys.argv[1]).read_text(encoding='utf-8'))
+data = obj.get('data') if isinstance(obj, dict) else None
+if isinstance(data, list) and data:
+    print(data[0].get('uuid') or '')
+elif isinstance(data, dict):
+    tasks = data.get('list') or data.get('tasks') or []
+    if isinstance(tasks, list) and tasks:
+        print(tasks[0].get('uuid') or '')
+PY
+)"
+if [[ -z "$TASK_UUID" ]]; then
+  echo "[BLOCKED] 云端暂无待下发任务：register/heartbeat/pending 已通过，但无法验证任务结果回传" | tee -a "$RUN_LOG"
+  cat > "$OUT_DIR/summary.md" <<EOS
+# DYQ-3 端侧执行链路最小冒烟结果
+
+- 时间: $(date '+%Y-%m-%d %H:%M:%S %z')
+- BASE_URL: $BASE_URL
+- 设备ID: $DEVICE_ID
+- 输出目录: $OUT_DIR
+- 状态: BLOCKED
+
+## 1. 已通过
+- 健康检查: 通过
+- register: HTTP $(cat "$RESP_DIR/register.code")
+- heartbeat: HTTP $(cat "$RESP_DIR/heartbeat.code")
+- pending: HTTP $(cat "$RESP_DIR/pending.code")
+- pendingTaskCount: $PENDING_COUNT
+
+## 2. 阻塞点
+- 云端没有返回待执行任务 uuid，无法继续验证 result 回传。
+- 下一步需要先由云端创建/分配一条面向设备 $DEVICE_ID 的待执行任务，或提供真实任务种子接口。
+EOS
+  exit 2
+fi
 echo "[PASS] 拉取到任务 taskUuid=$TASK_UUID" | tee -a "$RUN_LOG"
 
 # 4) 任务结果回传（端侧回传）
