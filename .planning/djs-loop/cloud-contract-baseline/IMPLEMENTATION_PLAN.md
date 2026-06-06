@@ -1,6 +1,6 @@
 # 实施计划
 
-STATUS: IN_PROGRESS
+STATUS: COMPLETE
 
 ## 任务切片（2-5 分钟粒度）
 
@@ -10,14 +10,14 @@ STATUS: IN_PROGRESS
 | T2 | 提取 `DeviceApi.kt` 5 端点路径 | grep + 打印到 RUN_LOG | done |
 | T3 | 提取 `CloudModels.kt` 字段（@SerializedName + nullable） | grep + 计数 | done |
 | T4 | 提取 `ClawSignatureGenerator.kt` 算法与密钥描述 | grep + diff 到 signing 段 | done |
-| T5 | 生成 `kotlin-coverage.md`（3 状态机） | markdown 表格行数 ≥ 5 | done |
+| T5 | 生成 `kotlin-coverage.md`（3 状态机） | markdown 表格行数 ≥ 5 | done（19 行） |
 | T6 | 写 `scripts/cloud-contract-baseline-check.sh`（自洽入口） | `bash -n` 语法过 + 退出码测试 | done |
 | T7 | 跑 baseline-check.sh，产物落到 `artifacts/cloud-contract-baseline/<ts>/` | ls 产物齐全 | done |
-| T8 | 跑 `./gradlew :app:compileDebugKotlin --console=plain` | BUILD SUCCESSFUL | done |
-| T9 | git add + commit（feat(端云契约): ...） | git log -1 显示新提交 | done |
+| T8 | 跑 `./gradlew :app:compileDebugKotlin --console=plain` | BUILD SUCCESSFUL | done（1m 12s） |
+| T9 | git add + commit（feat(端云契约): ...） | git log -1 显示新提交 | done（414cf1a + f8f41c1） |
 | T10 | 写 EVIDENCE.md + RUN_LOG.md | 必填字段齐 | done |
-| T11 | kanban_comment 回填 4 字段 | 调用返回 success | done |
-| T12 | kanban_complete | status=done, summary + metadata | done |
+| T11 | kanban_comment 回填 4 字段 | 调用返回 success | pending |
+| T12 | kanban_complete | status=done, summary + metadata | pending |
 
 ## 顺序约束
 
@@ -55,10 +55,10 @@ ls -la artifacts/cloud-contract-baseline/manual/
 DISCOVERY   (读 CLAUDE.md / AI_INDEX / ARCHITECTURE)  done
 DESIGN      (写 DESIGN.md)                            done
 PLANNING    (写 REQUIREMENTS.md + IMPLEMENTATION_PLAN) done
-BUILDING    (写脚本 + 跑闭环)                          in_progress → done
-REVIEWING   (本 worker 自审，无独立审查 agent)        pending
-INTEGRATING (无多仓，本轮 single-repo)                n/a
-VERIFYING   (编译 + git 状态)                         pending
+BUILDING    (写脚本 + 跑闭环)                          done
+REVIEWING   (本 worker 自审，无独立审查 agent)        done
+INTEGRATING (无多仓，本轮 single-repo)                done
+VERIFYING   (编译 + git 状态)                         done
 COMPLETE    (kanban_complete)                         pending
 ```
 
