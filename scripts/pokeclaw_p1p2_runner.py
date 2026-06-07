@@ -171,7 +171,7 @@ def simulate_execute(task_uuid, device_id, instruction):
 
 # ---------- 主流程 ----------
 log("==========================================")
-log("P1/P2 端侧任务领取/执行/证据回传 (原 P3-01)")
+log("P1/P2 端侧任务领取/执行/证据回传")
 log("==========================================")
 log(f"OUT_DIR     = {OUT_DIR}")
 log(f"DEVICE_ID   = {DEVICE_ID}")
@@ -352,7 +352,7 @@ try:
 
     result_meta = "HTTP_STATUS:200-DRY-RUN" if not PUSH_REAL_RESULT else "see responses/04_submit_result.body"
     with open(os.path.join(OUT_DIR, "summary.md"), "w", encoding="utf-8") as f:
-        f.write(f"""# P1/P2 端侧任务领取/执行/证据回传 (原 P3-01) — 证据汇总
+        f.write(f"""# P1/P2 端侧任务领取/执行/证据回传 — 证据汇总
 
 - 时间: {summary['timestamp']}
 - 设备: {DEVICE_ID}
