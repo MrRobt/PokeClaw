@@ -100,10 +100,15 @@ def device_heartbeat():
         pending_count = 0
         if len(tasks) < 3:
             task_uuid = str(uuid.uuid4())
+            # 构造带 command 字段的任务（对齐端侧 PendingTaskItem.command）
+            commands = ["打开设置", "点击确定", "输入 hello", "返回", "截图"]
+            import random
+            cmd = random.choice(commands)
             tasks[task_uuid] = {
                 "uuid": task_uuid,
                 "deviceId": device_id,
                 "type": "SIMPLE_ACTION",
+                "command": cmd,  # 端侧 LocalAgentTaskExecutor 真实消费字段
                 "payload": {"action": "open_app", "packageName": "com.android.settings"},
                 "status": "PENDING",
                 "createdAt": datetime.now().isoformat()
@@ -134,6 +139,7 @@ def get_pending_tasks(device_id):
             {
                 "uuid": t['uuid'],
                 "type": t['type'],
+                "command": t.get('command', ''),  # 对齐端侧 PendingTaskItem.command
                 "payload": t['payload'],
                 "createdAt": t['createdAt']
             }

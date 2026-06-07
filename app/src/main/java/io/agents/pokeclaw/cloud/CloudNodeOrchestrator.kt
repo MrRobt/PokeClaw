@@ -167,16 +167,17 @@ class CloudNodeOrchestrator(
             appVersion = BuildConfig.VERSION_NAME,
         )
         XLog.i(TAG, "registerDevice: 注册设备 $id, model=${Build.MODEL}")
-        return cloudClient.register(request)
+        val result = cloudClient.register(request)
+        if (result.isFailure) {
+            XLog.e(TAG, "registerDevice: 注册失败，${result.exceptionOrNull()?.message}")
+        }
+        return result.isSuccess
     }
 
     private suspend fun heartbeatLoop() {
         XLog.i(TAG, "heartbeatLoop: 启动心跳循环，间隔=${config.heartbeatIntervalMs}ms")
         while (scope.coroutineContext.isActive) {
             try {
-                // 先刷新令牌
-                cloudClient.refreshTokenIfNeeded(clock.nowMillis())
-
                 // 补报离线队列
                 if (config.flushQueueOnHeartbeat) {
                     cloudClient.flushOfflineQueue(clock.nowMillis())
@@ -184,7 +185,8 @@ class CloudNodeOrchestrator(
 
                 // 发心跳
                 val heartbeatRequest = buildHeartbeatRequest()
-                val success = cloudClient.sendHeartbeat(heartbeatRequest)
+                val heartbeatResult = cloudClient.sendHeartbeat(heartbeatRequest)
+                val success = heartbeatResult.isSuccess
 
                 if (success) {
                     consecutiveHeartbeatFailures = 0
@@ -193,7 +195,7 @@ class CloudNodeOrchestrator(
                     }
                 } else {
                     consecutiveHeartbeatFailures++
-                    XLog.w(TAG, "heartbeatLoop: 连续心跳失败 $consecutiveHeartbeatFailures 次")
+                    XLog.w(TAG, "heartbeatLoop: 连续心跳失败 $consecutiveHeartbeatFailures 次：${heartbeatResult.exceptionOrNull()?.message}")
                     if (consecutiveHeartbeatFailures >= config.maxConsecutiveHeartbeatFailures) {
                         XLog.e(TAG, "heartbeatLoop: 连续心跳失败达 ${config.maxConsecutiveHeartbeatFailures} 次，标记离线")
                         _state = State.ERROR
@@ -203,7 +205,8 @@ class CloudNodeOrchestrator(
                 // 检查是否有待处理任务
                 val id = deviceId
                 if (success && id != null && _state != State.EXECUTING) {
-                    val tasks = cloudClient.getPendingTasks(id)
+                    val tasksResult = cloudClient.getPendingTasks(id)
+                    val tasks = tasksResult.getOrNull()?.data.orEmpty()
                     if (tasks.isNotEmpty()) {
                         onPendingTasksAvailable(tasks)
                     }
@@ -257,6 +260,9 @@ class CloudNodeOrchestrator(
         // 构造错误详情（仅失败时填充）
         val errorDetail = if (!result.success) buildErrorDetail(result) else null
 
+        // 把执行器产出的 artifacts 拆为 toolCalls（操作序列）+ evidenceUrls（截图/资源路径）
+        val (toolCalls, evidenceUrls) = splitArtifacts(result.artifacts)
+
         // 上报结果
         val reportRequest = TaskResultRequest(
             status = statusReport,
@@ -264,6 +270,8 @@ class CloudNodeOrchestrator(
             errorMessage = if (!result.success) result.message.take(1024) else null,
             executionTimeMs = executionTimeMs,
             modelUsed = taskExecutor.getModelName(),
+            toolCalls = toolCalls,
+            evidenceUrls = evidenceUrls,
             // 错误回传字段（对齐云端错误上报协议）
             errorCategory = errorDetail?.category,
             errorCode = errorDetail?.code,
@@ -272,12 +280,14 @@ class CloudNodeOrchestrator(
             suggestedAction = errorDetail?.suggestedAction,
         )
 
-        try {
-            val reported = cloudClient.submitTaskResult(task.taskUuid, reportRequest)
-            XLog.i(TAG, "executeCloudTask: 结果上报${if (reported) "成功" else "失败/已缓存"}，taskUuid=${task.taskUuid}, status=$statusReport")
-        } catch (e: Exception) {
-            XLog.e(TAG, "executeCloudTask: 结果上报异常，taskUuid=${task.taskUuid}", e)
-        }
+        // 上报（Result 语义：成功 / 失败 / 离线入队 由 RetrofitDeviceCloudClient 内部处理）
+        val reported = cloudClient.submitTaskResult(task.taskUuid, reportRequest)
+        XLog.i(
+            TAG,
+            "executeCloudTask: 结果上报${if (reported.isSuccess) "成功" else "失败/已缓存"}，" +
+                "taskUuid=${task.taskUuid}, status=$statusReport, " +
+                "artifacts=${result.artifacts.size}",
+        )
 
         currentTaskUuid = null
         if (_state == State.EXECUTING) {
@@ -305,6 +315,23 @@ class CloudNodeOrchestrator(
         val recoverable: Boolean,
         val suggestedAction: String?,
     )
+
+    /**
+     * 把执行器产出的 artifacts 拆为 toolCalls + evidenceUrls 两组。
+     * 拆分规则：含 "skill:" / "taskUuid:" / "steps:" / "params:" / "mode:" / "priority:" 视为操作元数据
+     *          （进 toolCalls）；其它（截图路径、文件 URL 等）进 evidenceUrls。
+     */
+    private fun splitArtifacts(artifacts: List<String>): Pair<String?, String?> {
+        if (artifacts.isEmpty()) return null to null
+        val metadata = artifacts.filter { a ->
+            a.startsWith("skill:") || a.startsWith("taskUuid:") ||
+                a.startsWith("steps:") || a.startsWith("params:") ||
+                a.startsWith("mode:") || a.startsWith("priority:")
+        }
+        val evidence = artifacts - metadata.toSet()
+        return metadata.joinToString(";").takeIf { it.isNotBlank() } to
+            evidence.joinToString(",").takeIf { it.isNotBlank() }
+    }
 
     private fun buildErrorDetail(result: CloudTaskExecutionResult): ErrorDetail {
         return when (result.errorCode) {
