@@ -16,9 +16,23 @@ package io.agents.pokeclaw.cloud.util
  * Terminal statuses ([shouldStop] returns true):
  * SUCCESS, FAILED, CANCELLED, TIMEOUT.
  *
+ * @param phase1IntervalMillis Interval for phase 1 (default 500 ms).
+ * @param phase1MaxAttempts Number of attempts in phase 1 (default 5).
+ * @param phase2IntervalMillis Interval for phase 2 (default 1000 ms).
+ * @param phase2MaxAttempts Number of attempts in phase 2 (default 5).
+ * @param phase3IntervalMillis Interval for phase 3 (default 2000 ms).
+ * @param maxIntervalMillis Cap for phase 3 interval (default 30 000 ms).
  * @param totalTimeoutMillis Total polling budget in milliseconds (default 5 min).
  */
-class PollingPolicy(private val totalTimeoutMillis: Long) {
+class PollingPolicy(
+    private val phase1IntervalMillis: Long = 500L,
+    private val phase1MaxAttempts: Int = 5,
+    private val phase2IntervalMillis: Long = 1_000L,
+    private val phase2MaxAttempts: Int = 5,
+    private val phase3IntervalMillis: Long = 2_000L,
+    private val maxIntervalMillis: Long = 30_000L,
+    private val totalTimeoutMillis: Long = 5 * 60 * 1_000L,
+) {
 
     companion object {
         private val TERMINAL_STATUSES = setOf("SUCCESS", "FAILED", "CANCELLED", "TIMEOUT")
@@ -27,24 +41,24 @@ class PollingPolicy(private val totalTimeoutMillis: Long) {
     /**
      * Returns the next delay in milliseconds before the next poll attempt.
      *
+     * @param attemptIndex Zero-based attempt index.
      * @param elapsedSinceStart Elapsed time since polling started (milliseconds).
      *                           Not used in this implementation; the caller will use
      *                           [isExpired] for timeout enforcement.
-     * @return Recommended delay before next poll, capped at 30 000 ms.
+     * @return Recommended delay before next poll.
      */
     @Suppress("UNUSED_PARAMETER")
-    fun nextDelayMillis(attempt: Int, elapsedSinceStart: Long): Long {
-        val base = when {
-            attempt < 5  -> 500L
-            attempt < 10 -> 1_000L
-            else         -> 2_000L
+    fun nextDelayMillis(attemptIndex: Int, elapsedSinceStart: Long): Long {
+        return when {
+            attemptIndex <= phase1MaxAttempts -> phase1IntervalMillis
+            attemptIndex <= phase1MaxAttempts + phase2MaxAttempts -> phase2IntervalMillis
+            else -> phase3IntervalMillis.coerceAtMost(maxIntervalMillis)
         }
-        return base.coerceAtMost(30_000L)
     }
 
     /** Returns true when the status is terminal (SUCCESS, FAILED, CANCELLED, TIMEOUT). */
     fun shouldStop(status: String): Boolean = TERMINAL_STATUSES.contains(status)
 
     /** Returns true when the elapsed time exceeds the total polling budget. */
-    fun isExpired(elapsedSinceStart: Long): Boolean = elapsedSinceStart >= totalTimeoutMillis
+    fun isExpired(elapsedSinceStart: Long): Boolean = elapsedSinceStart > totalTimeoutMillis
 }
