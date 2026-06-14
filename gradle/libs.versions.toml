@@ -8,6 +8,7 @@ appcompat = "1.6.1"
 material = "1.10.0"
 langchain4j = "1.12.2"
 okhttp = "4.12.0"
+mockwebserver = "4.12.0"
 retrofit = "2.11.0"
 gson = "2.13.2"
 constraintlayout = "2.1.4"
@@ -37,6 +38,7 @@ langchain4j-core = { group = "dev.langchain4j", name = "langchain4j-core", versi
 langchain4j-openai = { group = "dev.langchain4j", name = "langchain4j-open-ai", version.ref = "langchain4j" }
 langchain4j-anthropic = { group = "dev.langchain4j", name = "langchain4j-anthropic", version.ref = "langchain4j" }
 okhttp = { group = "com.squareup.okhttp3", name = "okhttp", version.ref = "okhttp" }
+okhttp-mockwebserver = { group = "com.squareup.okhttp3", name = "mockwebserver", version.ref = "mockwebserver" }
 okhttp-logging = { group = "com.squareup.okhttp3", name = "logging-interceptor", version.ref = "okhttp" }
 retrofit = { group = "com.squareup.retrofit2", name = "retrofit", version.ref = "retrofit" }
 retrofit-gson = { group = "com.squareup.retrofit2", name = "converter-gson", version.ref = "retrofit" }
