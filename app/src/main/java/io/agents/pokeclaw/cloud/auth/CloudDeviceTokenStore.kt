@@ -28,12 +28,28 @@ data class CloudDeviceTokenSnapshot(
         refreshToken.isNotBlank() && expiresAtMillis - nowMillis <= refreshWindowMillis
 }
 
+/**
+ * 给定 token 字符串，补齐一次 Bearer 前缀；已有前缀则原样返回。
+ *
+ * 用法：`"abc-123".asBearerToken()` → `"Bearer abc-123"`；
+ *      `"Bearer abc-123".asBearerToken()` → `"Bearer abc-123"`。
+ */
+fun String.asBearerToken(): String =
+    if (startsWith("Bearer ")) this else "Bearer $this"
+
 /** 令牌存储抽象，方便后续替换为硬件强安全实现或联调内存实现。 */
 interface CloudDeviceTokenStore {
     fun saveTokens(deviceToken: String, refreshToken: String, expiresInSeconds: Int, nowMillis: Long = System.currentTimeMillis())
     fun updateDeviceToken(deviceToken: String, expiresInSeconds: Int, nowMillis: Long = System.currentTimeMillis())
     fun snapshot(): CloudDeviceTokenSnapshot?
     fun clear()
+    /**
+     * Force-invalidate all stored tokens + expiresAt.
+     *
+     * Caller is responsible for re-registering the device.
+     * 与 [clear] 的区别：invalidate 用于认证失败后强制清除，logging 更醒目。
+     */
+    fun invalidate()
 }
 
 /**
@@ -92,6 +108,15 @@ class AndroidKeystoreCloudDeviceTokenStore(
             .remove(KEY_EXPIRES_AT)
             .apply()
         XLog.i(TAG, "clear: cloud device tokens cleared")
+    }
+
+    override fun invalidate() {
+        prefs.edit()
+            .remove(KEY_DEVICE_TOKEN)
+            .remove(KEY_REFRESH_TOKEN)
+            .remove(KEY_EXPIRES_AT)
+            .apply()
+        XLog.w(TAG, "invalidate: cloud device tokens FORCE-INVALIDATED — caller must re-register")
     }
 
     private fun encrypt(plainText: String): String {

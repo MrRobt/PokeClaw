@@ -1,16 +1,23 @@
 // Copyright 2026 PokeClaw (agents.io). All rights reserved.
 // 端云设备云端客户端 — Retrofit 实现。
-// 负责：token 注入、401 自动刷新、离线结果入队、心跳失败计数、错误日志。
+// 负责：token 注入、401 自动刷新、离线结果入队、心跳失败计数、错误日志、HMAC 签名（v1.1.0）。
 
 package io.agents.pokeclaw.cloud
 
+import com.google.gson.Gson
+import com.google.gson.JsonObject
+import com.google.gson.JsonParser
 import io.agents.pokeclaw.cloud.api.DeviceApi
 import io.agents.pokeclaw.cloud.auth.CloudDeviceTokenStore
+import io.agents.pokeclaw.cloud.auth.HmacAuthException
+import io.agents.pokeclaw.cloud.auth.HmacHeaders
+import io.agents.pokeclaw.cloud.model.CancelTaskResponse
 import io.agents.pokeclaw.cloud.model.DeviceHeartbeatRequest
 import io.agents.pokeclaw.cloud.model.DeviceHeartbeat200Response
 import io.agents.pokeclaw.cloud.model.DeviceRegister200Response
 import io.agents.pokeclaw.cloud.model.DeviceRegisterRequest
 import io.agents.pokeclaw.cloud.model.GetPendingTasks200Response
+import io.agents.pokeclaw.cloud.model.GetTaskByUuidResponse
 import io.agents.pokeclaw.cloud.model.RefreshDeviceToken200Response
 import io.agents.pokeclaw.cloud.model.SubmitTaskResult200Response
 import io.agents.pokeclaw.cloud.model.TaskResultRequest
@@ -24,8 +31,13 @@ import retrofit2.Response
  * 行为契约：
  * - 401 响应时自动尝试一次 token 刷新，成功后重放原请求；仍 401 则视为认证失败
  * - 网络异常 / 5xx 返回 Result.failure
- * - submitTaskResult 在网络异常时入 [CloudEventQueue] 等网络恢复后补报
+ * - submitTaskResult / cancelTask 在网络异常时入 [OfflineResultQueue] 等网络恢复后补报
  * - sendHeartbeat 连续失败 3 次以上时触发 [onAuthFailed] 回调（编排器据此降级）
+ * - 401001~401004 HMAC 错误码解析为 [HmacAuthException]，按 code 路由不同处理策略
+ *
+ * v1.1.0 升级（2026-05-21）：
+ * - submitTaskResult / cancelTask 调用前自动生成 ts + nonce + HMAC-SHA256 签名
+ * - 签名 basePath 与后端 Spring Web HttpServletRequest.getRequestURI() 保持一致（始终以 "/" 开头）
  */
 class RetrofitDeviceCloudClient(
     private val api: DeviceApi,
@@ -33,10 +45,17 @@ class RetrofitDeviceCloudClient(
     private val offlineQueue: OfflineResultQueue? = null,
     private val nowProvider: () -> Long = { System.currentTimeMillis() },
     private val onAuthFailed: (() -> Unit)? = null,
+    private val gson: Gson = Gson(),
 ) : DeviceCloudClient {
 
     companion object {
         private const val TAG = "PokeClaw/RetrofitDeviceCloudClient"
+
+        /** 与后端约定的 submitTaskResult 路径（含前导 "/"）。 */
+        private const val SUBMIT_RESULT_PATH_FORMAT = "/api/claw-device/tasks/%s/result"
+
+        /** 与后端约定的 cancelTask 路径（含前导 "/"）。 */
+        private const val CANCEL_TASK_PATH_FORMAT = "/api/claw-device/tasks/%s/cancel"
 
         /**
          * 工厂方法：从 baseUrl + tokenStore + offlineQueue 构造完整客户端。
@@ -100,15 +119,26 @@ class RetrofitDeviceCloudClient(
         }
     }
 
+    /**
+     * 提交任务结果（v1.1.0 HMAC 必填）。
+     *
+     * 流程：序列化 body → 查 deviceToken → 计算 ts + nonce + 签名 → 注入 3 个 X-Claw-* 头 → POST。
+     * 失败处理：
+     * - 网络异常 → Result.failure + 入离线队列（enqueueOfflineResult）
+     * - 401001~401004 → Result.failure(HmacAuthException)
+     * - 401（非 HMAC）→ 走 runWithAuthRetry 重试
+     */
     override suspend fun submitTaskResult(
         taskUuid: String,
         request: TaskResultRequest,
     ): Result<SubmitTaskResult200Response> {
-        val result = runWithAuthRetry("submitTaskResult") {
-            api.submitTaskResult(taskUuid, request)
+        val bodyBytes = gson.toJson(request).toByteArray(Charsets.UTF_8)
+        val path = SUBMIT_RESULT_PATH_FORMAT.format(taskUuid)
+        val result = callWithHmac("submitTaskResult", path, bodyBytes) { ts, nonce, sig ->
+            api.submitTaskResult(taskUuid, request, ts, nonce, sig)
         }
-        if (result.isFailure) {
-            // 离线入队
+        if (result.isFailure && result.exceptionOrNull() !is HmacAuthException) {
+            // 离线入队（HmacAuthException 不应入队，需要重算签名）
             enqueueOfflineResult(taskUuid, request)
         }
         return result
@@ -129,6 +159,36 @@ class RetrofitDeviceCloudClient(
             }
     }
 
+    /**
+     * C3-01：单任务查询。不带 HMAC（Bearer 即可）。
+     */
+    override suspend fun getTaskByUuid(taskUuid: String): Result<GetTaskByUuidResponse> {
+        return runWithAuthRetry("getTaskByUuid") {
+            api.getTaskByUuid(taskUuid)
+        }
+    }
+
+    /**
+     * C3-01：取消任务（v1.1.0 HMAC 必填）。
+     *
+     * 取消请求也带 request body（通常是 RUNNING 状态 + 当前错误信息），以保持签名上下文。
+     * data=false 时仍返回 success，但 business-level 失败由调用方处理。
+     */
+    override suspend fun cancelTask(
+        taskUuid: String,
+        request: TaskResultRequest,
+    ): Result<CancelTaskResponse> {
+        val bodyBytes = gson.toJson(request).toByteArray(Charsets.UTF_8)
+        val path = CANCEL_TASK_PATH_FORMAT.format(taskUuid)
+        val result = callWithHmac("cancelTask", path, bodyBytes) { ts, nonce, sig ->
+            api.cancelTask(taskUuid, request, ts, nonce, sig)
+        }
+        if (result.isFailure && result.exceptionOrNull() !is HmacAuthException) {
+            enqueueOfflineResult(taskUuid, request)
+        }
+        return result
+    }
+
     override suspend fun enqueueOfflineResult(taskUuid: String, request: TaskResultRequest): Boolean {
         val queue = offlineQueue ?: return false
         return try {
@@ -147,8 +207,10 @@ class RetrofitDeviceCloudClient(
         XLog.i(TAG, "flushOfflineQueue: 待补报 ${due.size} 条")
         var success = 0
         for (event in due) {
-            val result = runWithAuthRetry("flushOfflineQueue") {
-                api.submitTaskResult(event.taskUuid, event.payload)
+            val bodyBytes = gson.toJson(event.payload).toByteArray(Charsets.UTF_8)
+            val path = SUBMIT_RESULT_PATH_FORMAT.format(event.taskUuid)
+            val result = callWithHmac("flushOfflineQueue", path, bodyBytes) { ts, nonce, sig ->
+                api.submitTaskResult(event.taskUuid, event.payload, ts, nonce, sig)
             }
             if (result.isSuccess) {
                 queue.markSucceeded(event.requestId)
@@ -164,6 +226,96 @@ class RetrofitDeviceCloudClient(
     }
 
     // ── 内部辅助 ──
+
+    /**
+     * 带 HMAC 签名的调用：在 [block] 前生成 ts + nonce + 签名，再把 (ts, nonce, sig) 透传给后端。
+     * 错误处理：401001~401004 → HmacAuthException；其他非 2xx / 网络异常 → 普通 failure。
+     */
+    private suspend fun <T> callWithHmac(
+        op: String,
+        path: String,
+        bodyBytes: ByteArray,
+        block: suspend (timestampMillis: Long, nonce: String, signature: String) -> Response<T>,
+    ): Result<T> {
+        val deviceToken = tokenStore.snapshot()?.deviceToken
+        if (deviceToken.isNullOrBlank()) {
+            XLog.e(TAG, "$op: 缺少 deviceToken，无法计算 HMAC 签名")
+            return Result.failure(
+                IllegalStateException("$op: 缺少 deviceToken，HMAC 签名无法计算"),
+            )
+        }
+        val headers = HmacHeaders.build(
+            deviceToken = deviceToken,
+            path = path,
+            bodyBytes = bodyBytes,
+            nowMillis = nowProvider(),
+        )
+        val result = runCatching {
+            block(headers.timestampMillis, headers.nonce, headers.signature)
+        }
+        return result.fold(
+            onSuccess = { response -> handleHmacResponse(op, response) },
+            onFailure = { e ->
+                XLog.e(TAG, "$op: 网络异常", e)
+                Result.failure(e)
+            },
+        )
+    }
+
+    /**
+     * 解析 HMAC 调用的 Response：401001~401004 → HmacAuthException；其他 2xx → success；其他 4xx/5xx → failure。
+     */
+    private fun <T> handleHmacResponse(op: String, response: Response<T>): Result<T> {
+        if (response.isSuccessful) {
+            val body = response.body()
+            if (body != null) {
+                return Result.success(body)
+            }
+            XLog.w(TAG, "$op: 响应体为空 code=${response.code()}")
+            return Result.failure(IllegalStateException("$op: 响应体为空"))
+        }
+        val code = response.code()
+        val errorBody = response.errorBody()?.string().orEmpty()
+        if (code == 401) {
+            val hmac = parseHmacErrorCode(errorBody)
+            if (hmac != null) {
+                XLog.e(TAG, "$op: HMAC 鉴权失败 code=${hmac.errorCode} reason=${hmac.reason}")
+                if (hmac.isDeviceMismatch || hmac.isTaskDeviceMismatch) {
+                    // 401004 / 403001 — token 与 deviceId 错配或任务设备不匹配，需要全量重新注册
+                    tokenStore.invalidate()
+                    onAuthFailed?.invoke()
+                }
+                return Result.failure(hmac)
+            }
+        }
+        XLog.w(TAG, "$op: 后端返回非成功 code=$code body=${errorBody.take(200)}")
+        return Result.failure(IllegalStateException("$op: HTTP $code"))
+    }
+
+    /**
+     * 从 401 响应体里抠出 HMAC 业务码（401001~401004 / 403001）。
+     * 兼容两种形态：
+     * - { "code": 401001, "msg": "INVALID_SIGNATURE" }
+     * - 纯文本 "INVALID_SIGNATURE"
+     */
+    private fun parseHmacErrorCode(errorBody: String): HmacAuthException? {
+        if (errorBody.isBlank()) return null
+        return try {
+            val json: JsonObject = JsonParser.parseString(errorBody).asJsonObject
+            val code = json.get("code")?.asInt ?: 0
+            HmacAuthException.forCode(code)
+        } catch (_: Exception) {
+            // 非 JSON 时尝试直接匹配 reason
+            when (errorBody.trim().uppercase()) {
+                "INVALID_SIGNATURE" -> HmacAuthException(HmacAuthException.CODE_INVALID_SIGNATURE, "INVALID_SIGNATURE")
+                "TIMESTAMP_EXPIRED" -> HmacAuthException(HmacAuthException.CODE_TIMESTAMP_EXPIRED, "TIMESTAMP_EXPIRED")
+                "NONCE_DUPLICATE" -> HmacAuthException(HmacAuthException.CODE_NONCE_DUPLICATE, "NONCE_DUPLICATE")
+                "DEVICE_MISMATCH" -> HmacAuthException(HmacAuthException.CODE_DEVICE_MISMATCH, "DEVICE_MISMATCH")
+                "TASK_DEVICE_MISMATCH" -> HmacAuthException(HmacAuthException.CODE_TASK_DEVICE_MISMATCH, "TASK_DEVICE_MISMATCH")
+                else -> null
+            }
+        }
+    }
 
     /**
      * 统一错误处理：网络异常 → Result.failure；非 2xx → Result.failure；body 为空 → Result.failure。

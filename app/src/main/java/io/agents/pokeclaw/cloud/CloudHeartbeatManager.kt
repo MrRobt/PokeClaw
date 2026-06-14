@@ -13,7 +13,10 @@ import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import io.agents.pokeclaw.cloud.model.DeviceCloudStatus
 import io.agents.pokeclaw.cloud.model.DeviceHeartbeatRequest
+import io.agents.pokeclaw.cloud.model.DeviceHeartbeat200Response
 import io.agents.pokeclaw.cloud.model.NetworkType as CloudNetworkType
+import io.agents.pokeclaw.cloud.util.ClockSkewDetector
+import io.agents.pokeclaw.cloud.util.SkillVersionCache
 import io.agents.pokeclaw.utils.XLog
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -49,17 +52,20 @@ class CloudHeartbeatWorker(
         val heartbeatRequest = manager.buildHeartbeatRequest()
 
         // 发送心跳
-        val success = try {
+        val result = try {
             client.sendHeartbeat(heartbeatRequest)
         } catch (e: Exception) {
             XLog.e(TAG, "心跳发送异常", e)
-            false
+            Result.failure<DeviceHeartbeat200Response>(e)
         }
 
-        if (!success) {
+        if (result.isFailure) {
             manager.recordHeartbeatFailure()
             return@withContext Result.retry()
         }
+
+        // 心跳成功，喂入响应到遥测工具
+        manager.onHeartbeatResponse(result.getOrThrow())
 
         // 心跳成功，拉取待处理任务
         manager.recordHeartbeatSuccess()
@@ -98,6 +104,10 @@ class CloudHeartbeatManager private constructor(
     private var consecutiveFailures: Int = 0
     private var lastHeartbeatTime: Long = 0
     private var currentStatus: DeviceCloudStatus = DeviceCloudStatus.UNREGISTERED
+
+    // R7 心跳遥测
+    private val clockSkewDetector = ClockSkewDetector()
+    private val skillVersionCache = SkillVersionCache()
 
     /**
      * 初始化云端客户端。
@@ -221,6 +231,32 @@ class CloudHeartbeatManager private constructor(
     }
 
     /**
+     * 处理心跳响应：喂入 serverTime 和 skillVersion 到遥测工具。
+     *
+     * R7 仅遥测记录，不触发主动重同步（reactive resync 是 R8+）。
+     */
+    fun onHeartbeatResponse(response: DeviceHeartbeat200Response) {
+        val data = response.data ?: return
+        val localNow = System.currentTimeMillis()
+
+        // serverTime 时钟漂移检测
+        val serverTime = data.serverTime
+        if (serverTime != 0L) {
+            val skewResult = clockSkewDetector.update(localNow, serverTime, SKEW_THRESHOLD_MILLIS)
+            if (skewResult.state == ClockSkewDetector.SkewState.WARN) {
+                XLog.w(TAG, "clock_skew_exceeded: skew=${skewResult.deltaMillis}ms (threshold=${SKEW_THRESHOLD_MILLIS}ms)")
+            }
+        }
+
+        // skillVersion 漂移检测
+        val skillVersion = data.skillVersion
+        if (skillVersion != 0 && skillVersionCache.update(skillVersion)) {
+            val cached = skillVersionCache.current()
+            XLog.i(TAG, "skill_version_drift: old=$cached new=$skillVersion")
+        }
+    }
+
+    /**
      * 获取当前云端状态。
      */
     fun getStatus(): DeviceCloudStatus = currentStatus
@@ -279,20 +315,39 @@ class CloudHeartbeatManager private constructor(
 
     /**
      * 获取网络类型。
-     * 对齐 device.openapi.yaml：仅返回 wifi/cellular/offline
+     * 对齐 device.openapi.yaml v1.1.0：仅返回 wifi/cellular/offline。
+     *
+     * v1.1.0 升级（2026-05-21）：从已弃用的 [ConnectivityManager.activeNetworkInfo] 切到
+     * [NetworkCapabilities]；无任何网络时显式返回 OFFLINE（不返回 null），让心跳请求始终带 networkType 字段。
      */
     private fun getNetworkType(): CloudNetworkType? {
         return try {
             val connectivityManager = context.getSystemService(Context.CONNECTIVITY_SERVICE)
                 as? android.net.ConnectivityManager
 
-            connectivityManager?.activeNetworkInfo?.let { networkInfo ->
-                when (networkInfo.type) {
-                    android.net.ConnectivityManager.TYPE_WIFI -> CloudNetworkType.WIFI
-                    android.net.ConnectivityManager.TYPE_MOBILE -> CloudNetworkType.CELLULAR
+            if (connectivityManager == null) {
+                return CloudNetworkType.OFFLINE
+            }
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
+                val network = connectivityManager.activeNetwork
+                val capabilities = network?.let { connectivityManager.getNetworkCapabilities(it) }
+                when {
+                    network == null || capabilities == null -> CloudNetworkType.OFFLINE
+                    capabilities.hasTransport(android.net.NetworkCapabilities.TRANSPORT_WIFI) -> CloudNetworkType.WIFI
+                    capabilities.hasTransport(android.net.NetworkCapabilities.TRANSPORT_CELLULAR) -> CloudNetworkType.CELLULAR
                     else -> CloudNetworkType.OFFLINE
                 }
-            } ?: CloudNetworkType.OFFLINE
+            } else {
+                @Suppress("DEPRECATION")
+                val activeNetworkInfo = connectivityManager.activeNetworkInfo
+                @Suppress("DEPRECATION")
+                when {
+                    activeNetworkInfo == null || !activeNetworkInfo.isConnected -> CloudNetworkType.OFFLINE
+                    activeNetworkInfo.type == android.net.ConnectivityManager.TYPE_WIFI -> CloudNetworkType.WIFI
+                    activeNetworkInfo.type == android.net.ConnectivityManager.TYPE_MOBILE -> CloudNetworkType.CELLULAR
+                    else -> CloudNetworkType.OFFLINE
+                }
+            }
         } catch (e: Exception) {
             XLog.w(TAG, "获取网络类型失败", e)
             CloudNetworkType.OFFLINE
@@ -318,6 +373,7 @@ class CloudHeartbeatManager private constructor(
         private const val WORK_TAG = "cloud_heartbeat"
         private const val DEFAULT_HEARTBEAT_INTERVAL_MINUTES = 1L
         private const val MAX_CONSECUTIVE_FAILURES = 3
+        private const val SKEW_THRESHOLD_MILLIS = 4 * 60 * 1000L
 
         const val ACTION_PENDING_TASKS = "io.agents.pokeclaw.action.PENDING_TASKS"
         const val EXTRA_TASK_COUNT = "task_count"
