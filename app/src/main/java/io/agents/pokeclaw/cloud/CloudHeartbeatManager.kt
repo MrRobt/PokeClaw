@@ -235,7 +235,7 @@ class CloudHeartbeatManager private constructor(
      *
      * R7 仅遥测记录，不触发主动重同步（reactive resync 是 R8+）。
      */
-    private fun onHeartbeatResponse(response: DeviceHeartbeat200Response) {
+    internal fun onHeartbeatResponse(response: DeviceHeartbeat200Response) {
         val data = response.data ?: return
         val localNow = System.currentTimeMillis()
 
