@@ -3,6 +3,8 @@
 package io.agents.pokeclaw.cloud.auth
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class HmacAuthErrorTest {
@@ -25,9 +27,17 @@ class HmacAuthErrorTest {
         assertEquals(HmacAuthError.Code.UNKNOWN, HmacAuthError.parse(999))
     }
     @Test fun `INVALID_SIGNATURE shouldTriggerReregister is false`() {
-        assertEquals(false, HmacAuthError.INVALID_SIGNATURE.shouldTriggerReregister)
+        assertFalse(HmacAuthError.Code.INVALID_SIGNATURE.shouldTriggerReregister)
     }
     @Test fun `TASK_DEVICE_MISMATCH shouldTriggerReregister is true`() {
-        assertEquals(true, HmacAuthError.Code.TASK_DEVICE_MISMATCH.shouldTriggerReregister)
+        assertTrue(HmacAuthError.Code.TASK_DEVICE_MISMATCH.shouldTriggerReregister)
+    }
+    @Test fun `Code numeric values match HMAC spec`() {
+        assertEquals(401001, HmacAuthError.Code.INVALID_SIGNATURE.numeric)
+        assertEquals(401002, HmacAuthError.Code.TIMESTAMP_EXPIRED.numeric)
+        assertEquals(401003, HmacAuthError.Code.NONCE_DUPLICATE.numeric)
+        assertEquals(401004, HmacAuthError.Code.DEVICE_MISMATCH.numeric)
+        assertEquals(403001, HmacAuthError.Code.TASK_DEVICE_MISMATCH.numeric)
+        assertEquals(-1, HmacAuthError.Code.UNKNOWN.numeric)
     }
 }
