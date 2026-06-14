@@ -81,6 +81,14 @@ class RetrofitDeviceCloudClient(
         get() = _consecutiveHeartbeatFailures
     private var _consecutiveHeartbeatFailures: Int = 0
 
+    private val hmacErrorTextToCode = mapOf(
+        "INVALID_SIGNATURE" to HmacAuthException.CODE_INVALID_SIGNATURE,
+        "TIMESTAMP_EXPIRED" to HmacAuthException.CODE_TIMESTAMP_EXPIRED,
+        "NONCE_DUPLICATE" to HmacAuthException.CODE_NONCE_DUPLICATE,
+        "DEVICE_MISMATCH" to HmacAuthException.CODE_DEVICE_MISMATCH,
+        "TASK_DEVICE_MISMATCH" to HmacAuthException.CODE_TASK_DEVICE_MISMATCH,
+    )
+
     override suspend fun register(request: DeviceRegisterRequest): Result<DeviceRegister200Response> {
         return runCatchingResponse("register") { api.registerDevice(request) }
             .onSuccess { resp ->
@@ -305,15 +313,7 @@ class RetrofitDeviceCloudClient(
             val code = json.get("code")?.asInt ?: 0
             HmacAuthException.forCode(code)
         } catch (_: Exception) {
-            // 非 JSON 时尝试直接匹配 reason
-            when (errorBody.trim().uppercase()) {
-                "INVALID_SIGNATURE" -> HmacAuthException(HmacAuthException.CODE_INVALID_SIGNATURE, "INVALID_SIGNATURE")
-                "TIMESTAMP_EXPIRED" -> HmacAuthException(HmacAuthException.CODE_TIMESTAMP_EXPIRED, "TIMESTAMP_EXPIRED")
-                "NONCE_DUPLICATE" -> HmacAuthException(HmacAuthException.CODE_NONCE_DUPLICATE, "NONCE_DUPLICATE")
-                "DEVICE_MISMATCH" -> HmacAuthException(HmacAuthException.CODE_DEVICE_MISMATCH, "DEVICE_MISMATCH")
-                "TASK_DEVICE_MISMATCH" -> HmacAuthException(HmacAuthException.CODE_TASK_DEVICE_MISMATCH, "TASK_DEVICE_MISMATCH")
-                else -> null
-            }
+            hmacErrorTextToCode[errorBody.trim().uppercase()]?.let { HmacAuthException.forCode(it) }
         }
     }
 

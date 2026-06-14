@@ -235,7 +235,7 @@ class CloudHeartbeatManager private constructor(
      *
      * R7 仅遥测记录，不触发主动重同步（reactive resync 是 R8+）。
      */
-    fun onHeartbeatResponse(response: DeviceHeartbeat200Response) {
+    private fun onHeartbeatResponse(response: DeviceHeartbeat200Response) {
         val data = response.data ?: return
         val localNow = System.currentTimeMillis()
 
@@ -250,9 +250,11 @@ class CloudHeartbeatManager private constructor(
 
         // skillVersion 漂移检测
         val skillVersion = data.skillVersion
-        if (skillVersion != 0 && skillVersionCache.update(skillVersion)) {
-            val cached = skillVersionCache.current()
-            XLog.i(TAG, "skill_version_drift: old=$cached new=$skillVersion")
+        if (skillVersion != 0) {
+            val previous = skillVersionCache.current()
+            if (skillVersionCache.update(skillVersion)) {
+                XLog.i(TAG, "skill_version_drift: old=$previous new=$skillVersion")
+            }
         }
     }
 
@@ -373,7 +375,7 @@ class CloudHeartbeatManager private constructor(
         private const val WORK_TAG = "cloud_heartbeat"
         private const val DEFAULT_HEARTBEAT_INTERVAL_MINUTES = 1L
         private const val MAX_CONSECUTIVE_FAILURES = 3
-        private const val SKEW_THRESHOLD_MILLIS = 4 * 60 * 1000L
+        private val SKEW_THRESHOLD_MILLIS = TimeUnit.MINUTES.toMillis(4)
 
         const val ACTION_PENDING_TASKS = "io.agents.pokeclaw.action.PENDING_TASKS"
         const val EXTRA_TASK_COUNT = "task_count"
