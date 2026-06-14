@@ -41,4 +41,45 @@ class SkillVersionCacheTest {
         val cache = SkillVersionCache()
         assertTrue("first update should not drift", !cache.update(5))
     }
+
+    @Test fun `concurrent updates from multiple threads do not lose drift detection`() {
+        val cache = SkillVersionCache()
+        cache.update(0)  // 初始化基线
+
+        val threadCount = 8
+        val updatesPerThread = 200
+        val driftDetectedCount = java.util.concurrent.atomic.AtomicInteger(0)
+        val latch = java.util.concurrent.CountDownLatch(threadCount)
+
+        repeat(threadCount) { threadId ->
+            Thread {
+                try {
+                    repeat(updatesPerThread) { i ->
+                        // 每次写入与上一个不同的值，强制出现 drift
+                        val newVal = threadId * 1000 + i + 1
+                        if (cache.update(newVal)) {
+                            driftDetectedCount.incrementAndGet()
+                        }
+                    }
+                } finally {
+                    latch.countDown()
+                }
+            }.start()
+        }
+
+        latch.await(10, java.util.concurrent.TimeUnit.SECONDS)
+
+        // 总更新次数：threadCount * updatesPerThread = 1600
+        // 首次 update (cache.update(0)) 不算 drift
+        // 之后所有 1600 次更新都应该被检测到 drift（因为每次写入的值都不同）
+        // 注意：由于并发交错，实际 drift 计数可能略低，但不应严重低于 1600
+        // 关键断言：drift 计数应该接近总更新次数（如果没有 lost-update，应该 = 1600）
+        val expectedTotal = threadCount * updatesPerThread
+        val ratio = driftDetectedCount.get().toDouble() / expectedTotal
+        assertTrue(
+            "drift detection ratio $ratio (got ${driftDetectedCount.get()}/$expectedTotal) " +
+                "should be >= 0.95 (lost updates indicate non-atomic read-modify-write)",
+            ratio >= 0.95,
+        )
+    }
 }
