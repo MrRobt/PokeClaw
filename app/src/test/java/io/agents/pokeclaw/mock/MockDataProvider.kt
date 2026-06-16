@@ -288,6 +288,119 @@ object MockDataProvider {
         )
     }
 
+    // ============ CloudTaskExecutor Mock 数据 ============
+
+    /**
+     * 创建本地执行任务场景
+     */
+    fun createLocalTaskExecutionScenario(
+        taskUuid: String = UUID.randomUUID().toString(),
+        command: String = "打开微信"
+    ): LocalTaskExecutionScenario {
+        return LocalTaskExecutionScenario(
+            pendingTask = createMockPendingTaskItem(
+                taskUuid = taskUuid,
+                command = command,
+                mode = "interactive",
+                priority = "normal"
+            ),
+            expectedSkillId = when {
+                command.contains("打开") || command.contains("启动") -> "launch_app"
+                command.contains("点击") || command.contains("按") -> "find_and_tap"
+                command.contains("输入") -> "input_text"
+                command.contains("返回") -> "go_back"
+                command.contains("滑动") -> "swipe_gesture"
+                else -> "unknown"
+            }
+        )
+    }
+
+    /**
+     * 创建 Dry Run 任务场景
+     */
+    fun createDryRunTaskScenario(
+        taskUuid: String = UUID.randomUUID().toString()
+    ): DryRunTaskScenario {
+        return DryRunTaskScenario(
+            pendingTask = createMockPendingTaskItem(
+                taskUuid = taskUuid,
+                command = "打开设置",
+                mode = "dry_run"
+            ),
+            expectedStubMessage = "DRY_RUN_OK：仅校验指令映射，不实际执行"
+        )
+    }
+
+    /**
+     * 创建离线模式场景
+     */
+    fun createOfflineModeScenario(): OfflineModeScenario {
+        return OfflineModeScenario(
+            isOffline = true,
+            isLocalModelAvailable = true,
+            expectedCanExecute = true,
+            fallbackResult = createOfflineTaskResult()
+        )
+    }
+
+    fun createOfflineTaskResult(
+        success: Boolean = true,
+        result: String? = "离线模式：任务已本地执行",
+        error: String? = null
+    ): OfflineTaskResult {
+        return OfflineTaskResult(
+            success = success,
+            result = result,
+            error = error
+        )
+    }
+
+    data class OfflineTaskResult(
+        val success: Boolean,
+        val result: String?,
+        val error: String?
+    )
+
+    // ============ Lobster Command Mock 数据 ============
+
+    /**
+     * 创建 Lobster Command 执行场景
+     */
+    fun createLobsterCommandScenario(
+        executionId: String = "exec-${UUID.randomUUID().toString().substring(0, 8)}"
+    ): LobsterCommandScenario {
+        return LobsterCommandScenario(
+            command = "打开微信并发送消息",
+            executionId = executionId,
+            initialStatus = "PENDING",
+            finalStatus = "SUCCESS",
+            result = "任务执行成功"
+        )
+    }
+
+    /**
+     * 创建 Lobster Command 超时场景
+     */
+    fun createLobsterCommandTimeoutScenario(
+        executionId: String = "exec-timeout-${UUID.randomUUID().toString().substring(0, 8)}"
+    ): LobsterCommandScenario {
+        return LobsterCommandScenario(
+            command = "执行复杂任务",
+            executionId = executionId,
+            initialStatus = "RUNNING",
+            finalStatus = "TIMEOUT",
+            result = null
+        )
+    }
+
+    data class LobsterCommandScenario(
+        val command: String,
+        val executionId: String,
+        val initialStatus: String,
+        val finalStatus: String,
+        val result: String?
+    )
+
     // ============ 数据类定义 ============
 
     data class TaskExecutionScenario(
@@ -313,5 +426,22 @@ object MockDataProvider {
         val registerResponse: DeviceRegister200Response,
         val heartbeatRequest: DeviceHeartbeatRequest,
         val heartbeatResponse: DeviceHeartbeat200Response
+    )
+
+    data class LocalTaskExecutionScenario(
+        val pendingTask: PendingTaskItem,
+        val expectedSkillId: String
+    )
+
+    data class DryRunTaskScenario(
+        val pendingTask: PendingTaskItem,
+        val expectedStubMessage: String
+    )
+
+    data class OfflineModeScenario(
+        val isOffline: Boolean,
+        val isLocalModelAvailable: Boolean,
+        val expectedCanExecute: Boolean,
+        val fallbackResult: OfflineTaskResult
     )
 }
