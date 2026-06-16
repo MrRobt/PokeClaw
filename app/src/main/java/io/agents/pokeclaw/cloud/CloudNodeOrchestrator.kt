@@ -4,8 +4,6 @@
 package io.agents.pokeclaw.cloud
 
 import android.content.Context
-import android.os.Build
-import io.agents.pokeclaw.BuildConfig
 import io.agents.pokeclaw.cloud.auth.CloudDeviceTokenStore
 import io.agents.pokeclaw.cloud.model.DeviceHeartbeatRequest
 import io.agents.pokeclaw.cloud.model.DeviceRegisterRequest
@@ -17,7 +15,6 @@ import io.agents.pokeclaw.cloudnode.CloudTaskErrorCode
 import io.agents.pokeclaw.cloudnode.CloudTaskExecutionResult
 import io.agents.pokeclaw.cloud.model.TaskStatus
 import io.agents.pokeclaw.cloudnode.SystemCloudExecutorClock
-import io.agents.pokeclaw.utils.KVUtils
 import io.agents.pokeclaw.utils.XLog
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -27,7 +24,6 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.util.UUID
 
 /**
  * 端云执行节点编排器。
@@ -45,15 +41,44 @@ import java.util.UUID
  * - 当前任务正在执行时不会被心跳中断
  */
 class CloudNodeOrchestrator(
-    private val context: Context,
     private val cloudClient: DeviceCloudClient,
     private val tokenStore: CloudDeviceTokenStore,
-    private val offlineQueue: CloudEventQueue,
+    private val offlineQueue: OfflineResultQueue,
     private val taskExecutor: CloudTaskExecutor,
     private val config: OrchestratorConfig = OrchestratorConfig(),
     private val clock: CloudExecutorClock = SystemCloudExecutorClock,
     private val scope: CoroutineScope = CoroutineScope(Dispatchers.IO),
+    /**
+     * Android-dependent info source (battery / network / Build.* / KVUtils).
+     * Default uses [AndroidDeviceInfoProvider]; tests inject a fake to keep
+     * the orchestrator pure-JVM testable.
+     */
+    private val deviceInfo: DeviceInfoProvider,
 ) {
+    /**
+     * Android entry point — wraps [Context] into a default [AndroidDeviceInfoProvider].
+     * Production code uses this; JVM tests use the primary constructor and inject
+     * a [DeviceInfoProvider] fake directly.
+     */
+    constructor(
+        context: Context,
+        cloudClient: DeviceCloudClient,
+        tokenStore: CloudDeviceTokenStore,
+        offlineQueue: OfflineResultQueue,
+        taskExecutor: CloudTaskExecutor,
+        config: OrchestratorConfig = OrchestratorConfig(),
+        clock: CloudExecutorClock = SystemCloudExecutorClock,
+        scope: CoroutineScope = CoroutineScope(Dispatchers.IO),
+    ) : this(
+        cloudClient = cloudClient,
+        tokenStore = tokenStore,
+        offlineQueue = offlineQueue,
+        taskExecutor = taskExecutor,
+        config = config,
+        clock = clock,
+        scope = scope,
+        deviceInfo = AndroidDeviceInfoProvider(context),
+    )
 
     /** 编排器配置。 */
     data class OrchestratorConfig(
@@ -101,7 +126,7 @@ class CloudNodeOrchestrator(
             return
         }
         XLog.i(TAG, "start: 启动端云编排器")
-        deviceId = loadOrGenerateDeviceId()
+        deviceId = deviceInfo.loadOrGenerateDeviceId()
 
         scope.launch {
             try {
@@ -136,6 +161,33 @@ class CloudNodeOrchestrator(
         executeCloudTask(task)
     }
 
+    /**
+     * C3-01：主动取消当前正在执行的任务。
+     *
+     * 语义：
+     * - 当前无任务执行 → Result.failure(IllegalStateException)，不调云端
+     * - 取消请求成功但 data=false → Result.success(cancelled=false)，调用方降级处理
+     * - 取消请求网络异常 → Result.failure，任务继续在端侧跑完（不丢）
+     *
+     * 不修改 _state —— cancelTask 不会打断当前 EXECUTING 状态，结果上报仍由原 executeCloudTask 流程负责。
+     */
+    suspend fun cancelTask(reason: String? = null): Result<Boolean> {
+        val taskUuid = currentTaskUuid
+        if (taskUuid == null) {
+            XLog.w(TAG, "cancelTask: 当前无任务在执行，忽略取消请求")
+            return Result.failure(IllegalStateException("当前无任务在执行"))
+        }
+        XLog.i(TAG, "cancelTask: 取消任务 taskUuid=$taskUuid, reason=$reason")
+        val request = TaskResultRequest(
+            status = TaskResultRequest.Status.CANCELLED,
+            result = reason?.take(2048) ?: "用户主动取消",
+            errorMessage = reason?.take(1024),
+            executionTimeMs = 0L,
+        )
+        val response = cloudClient.cancelTask(taskUuid, request)
+        return response.map { it.cancelled() }
+    }
+
     // ── 内部实现 ──
 
     private suspend fun startInternal() {
@@ -161,12 +213,12 @@ class CloudNodeOrchestrator(
         }
         val request = DeviceRegisterRequest(
             deviceId = id,
-            deviceName = Build.MODEL,
-            deviceModel = Build.MODEL,
-            androidVersion = Build.VERSION.RELEASE,
-            appVersion = BuildConfig.VERSION_NAME,
+            deviceName = deviceInfo.deviceModel(),
+            deviceModel = deviceInfo.deviceModel(),
+            androidVersion = deviceInfo.androidVersion(),
+            appVersion = deviceInfo.appVersion(),
         )
-        XLog.i(TAG, "registerDevice: 注册设备 $id, model=${Build.MODEL}")
+        XLog.i(TAG, "registerDevice: 注册设备 $id, model=${deviceInfo.deviceModel()}")
         val result = cloudClient.register(request)
         if (result.isFailure) {
             XLog.e(TAG, "registerDevice: 注册失败，${result.exceptionOrNull()?.message}")
@@ -223,11 +275,11 @@ class CloudNodeOrchestrator(
     }
 
     private fun buildHeartbeatRequest(): DeviceHeartbeatRequest {
-        val batteryInfo = readBatteryInfo()
+        val batteryInfo = deviceInfo.readBatteryInfo()
         return DeviceHeartbeatRequest(
             batteryLevel = batteryInfo.first,
             isCharging = batteryInfo.second,
-            networkType = readNetworkType().value,
+            networkType = deviceInfo.readNetworkType().value,
         )
     }
 
@@ -380,70 +432,9 @@ class CloudNodeOrchestrator(
         }
     }
 
-    // ── 设备信息读取 ──
-
-    private fun loadOrGenerateDeviceId(): String {
-        val existing = KVUtils.getString(KEY_DEVICE_ID)
-        if (!existing.isNullOrBlank()) return existing
-        val newId = "pokeclaw-${UUID.randomUUID()}"
-        KVUtils.putString(KEY_DEVICE_ID, newId)
-        XLog.i(TAG, "loadOrGenerateDeviceId: 生成新设备编号 $newId")
-        return newId
-    }
-
-    private fun readBatteryInfo(): Pair<Int?, Boolean?> {
-        return try {
-            val intent = context.registerReceiver(null, android.content.IntentFilter(android.content.Intent.ACTION_BATTERY_CHANGED))
-            if (intent != null) {
-                val level = intent.getIntExtra(android.os.BatteryManager.EXTRA_LEVEL, -1)
-                val scale = intent.getIntExtra(android.os.BatteryManager.EXTRA_SCALE, -1)
-                val status = intent.getIntExtra(android.os.BatteryManager.EXTRA_STATUS, -1)
-                val batteryPct = if (level >= 0 && scale > 0) (level * 100 / scale) else null
-                val isCharging = status == android.os.BatteryManager.BATTERY_STATUS_CHARGING ||
-                    status == android.os.BatteryManager.BATTERY_STATUS_FULL
-                Pair(batteryPct, isCharging)
-            } else {
-                Pair(null, null)
-            }
-        } catch (e: Exception) {
-            XLog.w(TAG, "readBatteryInfo: 读取电量失败", e)
-            Pair(null, null)
-        }
-    }
-
-    private fun readNetworkType(): NetworkType {
-        return try {
-            val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? android.net.ConnectivityManager
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                // Android 6.0+ 使用新的 NetworkCapabilities API
-                val network = cm?.activeNetwork
-                val capabilities = network?.let { cm.getNetworkCapabilities(it) }
-                when {
-                    network == null || capabilities == null -> NetworkType.OFFLINE
-                    capabilities.hasTransport(android.net.NetworkCapabilities.TRANSPORT_WIFI) -> NetworkType.WIFI
-                    capabilities.hasTransport(android.net.NetworkCapabilities.TRANSPORT_CELLULAR) -> NetworkType.CELLULAR
-                    else -> NetworkType.OFFLINE
-                }
-            } else {
-                // 兼容旧版本（Android 5.x）
-                @Suppress("DEPRECATION")
-                val activeNetwork = cm?.activeNetworkInfo
-                @Suppress("DEPRECATION")
-                when {
-                    activeNetwork == null || !activeNetwork.isConnected -> NetworkType.OFFLINE
-                    activeNetwork.type == android.net.ConnectivityManager.TYPE_WIFI -> NetworkType.WIFI
-                    activeNetwork.type == android.net.ConnectivityManager.TYPE_MOBILE -> NetworkType.CELLULAR
-                    else -> NetworkType.OFFLINE
-                }
-            }
-        } catch (e: Exception) {
-            XLog.w(TAG, "readNetworkType: 读取网络类型失败", e)
-            NetworkType.OFFLINE
-        }
-    }
+    // ── 设备信息读取已下沉到 DeviceInfoProvider ──
 
     companion object {
         private const val TAG = "PokeClaw/CloudNodeOrchestrator"
-        private const val KEY_DEVICE_ID = "cloud_device_id"
     }
 }

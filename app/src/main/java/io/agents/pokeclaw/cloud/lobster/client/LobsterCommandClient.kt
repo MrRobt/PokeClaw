@@ -6,12 +6,12 @@ package io.agents.pokeclaw.cloud.lobster.client
 import io.agents.pokeclaw.cloud.lobster.api.LobsterCommandApi
 import io.agents.pokeclaw.cloud.lobster.model.CommandDetailResult
 import io.agents.pokeclaw.cloud.lobster.model.CommandExecuteReq
+import io.agents.pokeclaw.cloud.lobster.model.CommandExecuteResp
 import io.agents.pokeclaw.cloud.lobster.model.HermesFeedbackReq
 import io.agents.pokeclaw.cloud.model.CommonResult
 import io.agents.pokeclaw.cloud.util.PollingPolicy
 import io.agents.pokeclaw.utils.XLog
 import kotlinx.coroutines.delay
-import java.util.concurrent.atomic.AtomicReference
 
 /**
  * Lobster command channel client.
@@ -83,11 +83,11 @@ class LobsterCommandClient(
      *         Result.NotFound on 404
      */
     suspend fun poll(executionId: String): Result {
-        val startedAt = AtomicReference(nowProvider())
+        val startedAt = nowProvider()
         var attempt = 0
         while (true) {
             attempt++
-            val elapsed = nowProvider() - startedAt.get()
+            val elapsed = nowProvider() - startedAt
             if (policy.isExpired(elapsed)) {
                 XLog.e(TAG, "poll: timeout executionId=$executionId attempt=$attempt")
                 return Result.PollTimeout(executionId)

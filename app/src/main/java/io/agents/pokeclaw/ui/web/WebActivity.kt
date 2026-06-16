@@ -12,6 +12,7 @@ import android.webkit.WebChromeClient
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.ProgressBar
+import androidx.activity.OnBackPressedCallback
 import io.agents.pokeclaw.R
 import io.agents.pokeclaw.base.BaseActivity
 import io.agents.pokeclaw.widget.CommonToolbar
@@ -60,6 +61,15 @@ class WebActivity : BaseActivity() {
         initToolbar(defaultTitle)
         initProgressBar()
         initWebView(url)
+        onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() {
+                if (::webView.isInitialized && webView.canGoBack()) {
+                    webView.goBack()
+                } else {
+                    finish()
+                }
+            }
+        })
     }
 
     private fun initToolbar(defaultTitle: String?) {
@@ -120,14 +130,6 @@ class WebActivity : BaseActivity() {
             }
 
             loadUrl(url)
-        }
-    }
-
-    override fun onBackPressed() {
-        if (::webView.isInitialized && webView.canGoBack()) {
-            webView.goBack()
-        } else {
-            super.onBackPressed()
         }
     }
 

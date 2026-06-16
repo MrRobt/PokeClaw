@@ -1,0 +1,7 @@
+<resources>
+    <style name="Theme.PokeClaw.Splash" parent="Theme.PokeClaw">
+        <item name="android:windowBackground">@color/colorBgPrimary</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@android:color/transparent</item>
+        <item name="android:windowSplashScreenBackground">@color/colorBgPrimary</item>
+    </style>
+</resources>

@@ -12,8 +12,14 @@ import android.os.Looper
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.runtime.collectAsState
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
 import io.agents.pokeclaw.TaskEvent
 import io.agents.pokeclaw.agent.llm.ModelConfigRepository
 import io.agents.pokeclaw.automation.ExternalAutomationContract
@@ -38,6 +44,8 @@ class ComposeChatActivity : ComponentActivity() {
         private const val TAG = "ComposeChatActivity"
         private const val EXTRA_TASK = "task"
         private const val EXTRA_CHAT = "chat"
+        private const val STARTUP_SHELL_DELAY_MS = 3000L
+        private const val STARTUP_RUNTIME_BOOTSTRAP_DELAY_MS = 500L
     }
 
     private val executor = Executors.newSingleThreadExecutor()
@@ -141,90 +149,75 @@ class ComposeChatActivity : ComponentActivity() {
         val composeColors = with(ThemeManager) { themeColors.toComposeColors() }
 
         setContent {
-            val activeTasks by activeTaskShellController.activeTasks.collectAsState()
+            var showChatUi by remember { mutableStateOf(false) }
+            LaunchedEffect(Unit) {
+                kotlinx.coroutines.delay(STARTUP_SHELL_DELAY_MS)
+                showChatUi = true
+            }
 
-            ChatScreen(
-                messages = _messages.toList(),
-                modelStatus = _modelStatus.value,
-                needsPermission = _needsPermission.value,
-                isAwaitingReply = _isAwaitingReply.value,
-                isTaskRunning = _isTaskRunning.value,
-                inputEnabled = _inputEnabled.value,
-                isDownloading = _isDownloading.value,
-                downloadProgress = _downloadProgress.value,
-                isLocalModel = _isLocalModelActive.value,
-                sessionTokens = _sessionTokens.value,
-                sessionCost = _sessionCost.value,
-                onSendChat = { sendChat(it) },
-                onSendTask = { taskFlowController.sendTask(it) },
-                onStartMonitor = { target -> taskFlowController.startMonitor(target) },
-                onSendDirectMessage = { contact, app, message ->
-                    taskFlowController.sendTask("send \"$message\" to $contact on $app")
-                },
-                onNewChat = { newChat() },
-                onOpenSettings = { startActivity(Intent(this, SettingsActivity::class.java)) },
-                onOpenModels = { startActivity(Intent(this, LlmConfigActivity::class.java)) },
-                onFixPermissions = { startActivity(Intent(this, SettingsActivity::class.java)) },
-                onAttach = { Toast.makeText(this, "Image upload coming soon", Toast.LENGTH_SHORT).show() },
-                conversations = _conversations.toList(),
-                onSelectConversation = { loadConversation(it) },
-                onDeleteConversation = { conv ->
-                    val deleted = conversationStore.deleteConversation(conv)
-                    XLog.i(TAG, "Delete conversation: ${conv.file.absolutePath} deleted=$deleted")
-                    refreshSidebarHistory()
-                },
-                onRenameConversation = { conv, newName ->
-                    val renamed = conversationStore.renameConversation(conv, newName)
-                    XLog.i(TAG, "Rename conversation: '${conv.title}' → '$newName' renamed=$renamed")
-                    refreshSidebarHistory()
-                },
-                activeTasks = activeTasks,
-                onStopTask = { contact ->
-                    _isTaskRunning.value = appViewModel.isTaskRunning()
-                    Toast.makeText(
-                        this,
-                        activeTaskShellController.stopTask(contact),
-                        Toast.LENGTH_SHORT
-                    ).show()
-                },
-                onStopAllTasks = {
-                    _isAwaitingReply.value = false
-                    _isTaskRunning.value = false
-                    Toast.makeText(
-                        this,
-                        activeTaskShellController.stopAllTasks(),
-                        Toast.LENGTH_SHORT
-                    ).show()
-                },
-                onModelSwitch = { modelId, displayName -> switchModel(modelId, displayName) },
-                colors = composeColors,
-            )
-        }
+            if (!showChatUi) {
+                StartupShell(composeColors)
+            } else {
+                val activeTasks by activeTaskShellController.activeTasks.collectAsState()
 
-        refreshSidebarHistory()
-
-        // Restore last conversation if Activity was recreated (e.g., system killed it during a task)
-        if (_messages.isEmpty()) {
-            conversationStore.restoreLastConversation()?.let { restored ->
-                syncSidebar(restored.conversations)
-                if (restored.messages.isNotEmpty()) {
-                    _messages.addAll(restored.messages)
-                    XLog.i(
-                        TAG,
-                        "Restored ${restored.messages.size} messages from conversation ${restored.conversationId}"
-                    )
-                }
+                ChatScreen(
+                    messages = _messages.toList(),
+                    modelStatus = _modelStatus.value,
+                    needsPermission = _needsPermission.value,
+                    isAwaitingReply = _isAwaitingReply.value,
+                    isTaskRunning = _isTaskRunning.value,
+                    inputEnabled = _inputEnabled.value,
+                    isDownloading = _isDownloading.value,
+                    downloadProgress = _downloadProgress.value,
+                    isLocalModel = _isLocalModelActive.value,
+                    sessionTokens = _sessionTokens.value,
+                    sessionCost = _sessionCost.value,
+                    onSendChat = { sendChat(it) },
+                    onSendTask = { taskFlowController.sendTask(it) },
+                    onStartMonitor = { target -> taskFlowController.startMonitor(target) },
+                    onSendDirectMessage = { contact, app, message ->
+                        taskFlowController.sendTask("send \"$message\" to $contact on $app")
+                    },
+                    onNewChat = { newChat() },
+                    onOpenSettings = { startActivity(Intent(this, SettingsActivity::class.java)) },
+                    onOpenModels = { startActivity(Intent(this, LlmConfigActivity::class.java)) },
+                    onFixPermissions = { startActivity(Intent(this, SettingsActivity::class.java)) },
+                    onAttach = { Toast.makeText(this, "Image upload coming soon", Toast.LENGTH_SHORT).show() },
+                    conversations = _conversations.toList(),
+                    onSelectConversation = { loadConversation(it) },
+                    onDeleteConversation = { conv ->
+                        val deleted = conversationStore.deleteConversation(conv)
+                        XLog.i(TAG, "Delete conversation: ${conv.file.absolutePath} deleted=$deleted")
+                        refreshSidebarHistory()
+                    },
+                    onRenameConversation = { conv, newName ->
+                        val renamed = conversationStore.renameConversation(conv, newName)
+                        XLog.i(TAG, "Rename conversation: '${conv.title}' -> '$newName' renamed=$renamed")
+                        refreshSidebarHistory()
+                    },
+                    activeTasks = activeTasks,
+                    onStopTask = { contact ->
+                        _isTaskRunning.value = appViewModel.isTaskRunning()
+                        Toast.makeText(
+                            this,
+                            activeTaskShellController.stopTask(contact),
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    },
+                    onStopAllTasks = {
+                        _isAwaitingReply.value = false
+                        _isTaskRunning.value = false
+                        Toast.makeText(
+                            this,
+                            activeTaskShellController.stopAllTasks(),
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    },
+                    onModelSwitch = { modelId, displayName -> switchModel(modelId, displayName) },
+                    colors = composeColors,
+                )
             }
         }
-
-        deferLocalChatBootstrapForAutoTask = shouldDeferLocalChatBootstrap(intent)
-        if (!deferLocalChatBootstrapForAutoTask) {
-            chatSessionController.loadModelIfReady(
-                conversationId = conversationStore.currentConversationId,
-                visibleMessages = _messages.toList(),
-            )
-        }
-        _isLocalModelActive.value = ModelConfigRepository.isLocalActive()
 
         // Release local LLM conversation before task starts so the agent can use the engine
         // (LiteRT-LM only supports 1 session at a time)
@@ -232,10 +225,74 @@ class ComposeChatActivity : ComponentActivity() {
             chatSessionController.releaseForTask()
         }
 
-        // Debug: auto-trigger task from ADB intent
-        // Usage: adb shell am start -n io.agents.pokeclaw/.ui.chat.ComposeChatActivity --es task "open my camera"
-        handleIntentAutomation(intent, initialDelayMs = 2000)
+        bootstrapChatRuntimeAfterFirstDraw(intent)
+    }
 
+    @Composable
+    private fun StartupShell(colors: PokeclawColors) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(colors.background),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                text = "PokeClaw",
+                color = colors.textPrimary,
+            )
+        }
+    }
+
+    private fun bootstrapChatRuntimeAfterFirstDraw(startupIntent: Intent?) {
+        Handler(Looper.getMainLooper()).postDelayed({
+            if (isFinishing || isDestroyed) return@postDelayed
+
+            val shouldRestoreConversation = _messages.isEmpty()
+            deferLocalChatBootstrapForAutoTask = shouldDeferLocalChatBootstrap(startupIntent)
+
+            executor.submit {
+                try {
+                    val restored = if (shouldRestoreConversation) {
+                        conversationStore.restoreLastConversation()
+                    } else {
+                        null
+                    }
+                    val conversations = restored?.conversations ?: conversationStore.refreshSidebar()
+
+                    Handler(Looper.getMainLooper()).post {
+                        if (isFinishing || isDestroyed) return@post
+
+                        syncSidebar(conversations)
+                        if (
+                            shouldRestoreConversation &&
+                            _messages.isEmpty() &&
+                            restored != null &&
+                            restored.messages.isNotEmpty()
+                        ) {
+                            _messages.addAll(restored.messages)
+                            XLog.i(
+                                TAG,
+                                "Restored ${restored.messages.size} messages from conversation ${restored.conversationId}"
+                            )
+                        }
+
+                        if (!deferLocalChatBootstrapForAutoTask) {
+                            chatSessionController.loadModelIfReady(
+                                conversationId = conversationStore.currentConversationId,
+                                visibleMessages = _messages.toList(),
+                            )
+                        }
+                        _isLocalModelActive.value = ModelConfigRepository.isLocalActive()
+
+                        // Debug: auto-trigger task from ADB intent
+                        // Usage: adb shell am start -n io.agents.pokeclaw/.ui.chat.ComposeChatActivity --es task "open my camera"
+                        handleIntentAutomation(startupIntent, initialDelayMs = 2000)
+                    }
+                } catch (e: Exception) {
+                    XLog.e(TAG, "bootstrapChatRuntimeAfterFirstDraw failed", e)
+                }
+            }
+        }, STARTUP_RUNTIME_BOOTSTRAP_DELAY_MS)
     }
 
     override fun onNewIntent(intent: Intent) {

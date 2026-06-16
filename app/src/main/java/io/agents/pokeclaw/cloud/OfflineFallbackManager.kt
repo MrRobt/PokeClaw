@@ -86,7 +86,7 @@ class OfflineFallbackManager private constructor(context: Context) {
             // 目前返回占位结果
             OfflineTaskResult(
                 success = true,
-                result = "离线模式：任务已本地执行（Gemmma 4 待接入）",
+                result = "离线模式：任务已本地执行（Gemma 4 待接入）",
                 error = null
             )
         } catch (e: Exception) {

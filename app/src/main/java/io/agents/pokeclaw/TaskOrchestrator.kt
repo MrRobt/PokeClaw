@@ -8,6 +8,7 @@ import io.agents.pokeclaw.agent.AgentConfig
 import io.agents.pokeclaw.agent.AgentService
 import io.agents.pokeclaw.agent.AgentServiceFactory
 import io.agents.pokeclaw.agent.PipelineRouter
+import io.agents.pokeclaw.agent.learning.TaskLearningManager
 import io.agents.pokeclaw.agent.skill.SkillExecutor
 import io.agents.pokeclaw.agent.skill.SkillRegistry
 import io.agents.pokeclaw.channel.Channel
@@ -38,6 +39,7 @@ class TaskOrchestrator(
     private lateinit var agentService: AgentService
     private val pipelineRouter = PipelineRouter(ClawApplication.instance)
     private val skillExecutor = SkillExecutor()
+    private val learningManager = TaskLearningManager(ClawApplication.instance)
     val taskSessionStore = TaskSessionStore()
 
     val inProgressTaskMessageId: String
@@ -143,6 +145,7 @@ class TaskOrchestrator(
                 XLog.i(TAG, "Pipeline Tier 1: DirectIntent — ${route.description}")
                 pipelineRouter.executeIntent(route.intent)
                 XLog.i(TAG, "onComplete: rounds=0, totalTokens=0, model=direct, answer=${route.description}")
+                learningManager.recordSuccess(messageID, task, route.description)
                 taskEventCallback?.invoke(TaskEvent.Completed(route.description))
                 ChannelManager.sendMessage(channel, "✓ ${route.description}", messageID)
                 releaseTask()
@@ -160,11 +163,19 @@ class TaskOrchestrator(
                         if (!toolResult.isSuccess) {
                             val error = toolResult.error ?: "Unknown error"
                             XLog.w(TAG, "Tier 1 tool failed: $error")
+                            learningManager.recordFailure(
+                                taskId = messageID,
+                                taskText = task,
+                                errorCategory = "DIRECT_TOOL",
+                                errorCode = route.toolName,
+                                recoveryHint = error,
+                            )
                             taskEventCallback?.invoke(TaskEvent.Completed("Failed: ${route.description}"))
                             ChannelManager.sendMessage(channel, "✗ ${route.description}: $error", messageID)
                             "Failed: ${route.description}: $error"
                         } else {
                             success = true
+                            learningManager.recordSuccess(messageID, task, route.description)
                             taskEventCallback?.invoke(TaskEvent.Completed(route.description))
                             ChannelManager.sendMessage(channel, "✓ ${route.description}", messageID)
                             route.description
@@ -172,6 +183,13 @@ class TaskOrchestrator(
                     } catch (e: Exception) {
                         val message = e.message ?: "Unknown error"
                         XLog.e(TAG, "Tier 1 tool crashed: ${route.toolName}", e)
+                        learningManager.recordFailure(
+                            taskId = messageID,
+                            taskText = task,
+                            errorCategory = "DIRECT_TOOL",
+                            errorCode = route.toolName,
+                            recoveryHint = message,
+                        )
                         taskEventCallback?.invoke(TaskEvent.Failed(message))
                         ChannelManager.sendMessage(channel, "✗ ${route.description}: $message", messageID)
                         "Failed: ${route.description}: $message"
@@ -196,6 +214,7 @@ class TaskOrchestrator(
                     XLog.i(TAG, "Pipeline Tier 2: Skill — ${route.skillId}")
                     val skill = SkillRegistry.findById(route.skillId)
                     if (skill != null) {
+                        SkillRegistry.onSelection(skill)
                         FloatingCircleManager.ensureShowing()
                         FloatingCircleManager.showTaskNotify(task, channel)
                         Thread({
@@ -204,6 +223,8 @@ class TaskOrchestrator(
                                 ForegroundService.updateTaskStatus(ClawApplication.instance, desc)
                             }
                             if (skillResult.success) {
+                                SkillRegistry.updateRuntimeStats(skill.id, success = true, roundSuccess = true, isFallback = false)
+                                learningManager.recordSuccess(messageID, task, skillResult.message)
                                 ChannelManager.sendMessage(channel, skillResult.message, messageID)
                                 taskEventCallback?.invoke(TaskEvent.Completed(skillResult.message))
                                 releaseTask()
@@ -211,8 +232,16 @@ class TaskOrchestrator(
                                 ForegroundService.resetToIdle(ClawApplication.instance)
                                 onTaskFinished()
                             } else {
+                                SkillRegistry.updateRuntimeStats(skill.id, success = false, roundSuccess = false, isFallback = false)
                                 val fallbackGoal = skill.fallbackGoal
                                     .let { g -> route.params.entries.fold(g) { acc, (k, v) -> acc.replace("{$k}", v) } }
+                                learningManager.recordFailure(
+                                    taskId = messageID,
+                                    taskText = task,
+                                    errorCategory = "SKILL",
+                                    errorCode = skill.id,
+                                    recoveryHint = fallbackGoal,
+                                )
                                 XLog.i(TAG, "Skill ${skill.id} failed, falling back to agent loop: $fallbackGoal")
                                 taskEventCallback?.invoke(TaskEvent.ToolAction("Retrying with AI agent"))
                                 startNewTask(channel, fallbackGoal, messageID, isFallback = true)
@@ -235,6 +264,13 @@ class TaskOrchestrator(
                 agentService.initialize(agentConfigProvider())
             } catch (e: Exception) {
                 XLog.e(TAG, "Failed to initialize AgentService", e)
+                learningManager.recordFailure(
+                    taskId = messageID,
+                    taskText = task,
+                    errorCategory = "AGENT",
+                    errorCode = "SERVICE_NOT_READY",
+                    recoveryHint = e.message ?: "AI service not ready",
+                )
                 releaseTask()
                 ForegroundService.resetToIdle(ClawApplication.instance)
                 taskEventCallback?.invoke(TaskEvent.Failed("AI service not ready"))
@@ -254,7 +290,8 @@ class TaskOrchestrator(
 
         var floatingShown = false
 
-        val agentPrompt = agentPromptOverride?.takeIf { it.isNotBlank() } ?: task
+        val agentPromptBase = agentPromptOverride?.takeIf { it.isNotBlank() } ?: task
+        val agentPrompt = learningManager.buildPrompt(agentPromptBase)
         agentService.executeTask(agentPrompt, object : AgentCallback {
             override fun onLoopStart(round: Int) {
                 flushRoundBuffer()
@@ -336,6 +373,13 @@ class TaskOrchestrator(
                     ClawApplication.instance.getString(R.string.channel_msg_task_cancelled)
                 )
                 if (finalAnswer.trim() in cancelAnswers) {
+                    learningManager.recordFailure(
+                        taskId = messageID,
+                        taskText = task,
+                        errorCategory = "AGENT",
+                        errorCode = "CANCELLED",
+                        recoveryHint = "Task was cancelled by user.",
+                    )
                     taskEventCallback?.invoke(TaskEvent.Cancelled)
                     ForegroundService.resetToIdle(ClawApplication.instance)
                     flushRoundBuffer()
@@ -357,6 +401,7 @@ class TaskOrchestrator(
                 var answer = finalAnswer.ifEmpty { "Done." }
                 answer = answer.removePrefix("Task completed:").removePrefix("Task completed").trim()
                 if (answer.isEmpty()) answer = "Done."
+                learningManager.recordSuccess(messageID, task, answer)
                 taskEventCallback?.invoke(TaskEvent.Completed(answer, modelName))
                 ForegroundService.resetToIdle(ClawApplication.instance)
                 flushRoundBuffer()
@@ -382,6 +427,13 @@ class TaskOrchestrator(
 
             override fun onError(round: Int, error: Exception, totalTokens: Int) {
                 XLog.e(TAG, "onError: ${error.message}, totalTokens=$totalTokens", error)
+                learningManager.recordFailure(
+                    taskId = messageID,
+                    taskText = task,
+                    errorCategory = "AGENT",
+                    errorCode = error.javaClass.simpleName,
+                    recoveryHint = error.message ?: "Unknown error",
+                )
                 taskEventCallback?.invoke(TaskEvent.Failed(error.message ?: "Unknown error"))
                 ForegroundService.resetToIdle(ClawApplication.instance)
                 flushRoundBuffer()
@@ -400,6 +452,13 @@ class TaskOrchestrator(
 
             override fun onSystemDialogBlocked(round: Int, totalTokens: Int) {
                 XLog.w(TAG, "onSystemDialogBlocked: round=$round, totalTokens=$totalTokens")
+                learningManager.recordFailure(
+                    taskId = messageID,
+                    taskText = task,
+                    errorCategory = "SYSTEM_DIALOG",
+                    errorCode = "BLOCKED",
+                    recoveryHint = ClawApplication.instance.getString(R.string.channel_msg_system_dialog_blocked),
+                )
                 taskEventCallback?.invoke(TaskEvent.Blocked)
                 flushRoundBuffer()
                 val blockedSession = releaseTask()

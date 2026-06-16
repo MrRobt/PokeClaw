@@ -205,4 +205,62 @@
     <string name="input_dialog_need_more">Enter at least %d characters</string>
     <string name="input_dialog_need_less">Enter at most %d characters</string>
     <string name="input_dialog_no_zero">Please enter a non-zero value</string>
+
+    <!-- R5: Muxi capability badge (US-D-025-NATIVE-AUDIO-CAPABILITY-BADGE) -->
+    <string name="capability_badge_native_audio">🎙️ 原生带配音</string>
+    <string name="capability_missing_native_audio_note">本模型无配音</string>
+
+    <!-- R5: Remake scene picker (US-D-028-REMAKE-SCENE-PICKER) -->
+    <string name="remake_scene_picker_title">选择复刻场景</string>
+    <string name="remake_scene_picker_entry">复刻</string>
+
+    <!-- R5: AIGC template picker (US-D-030-CHANNEL-CODE-TEMPLATE-FILTER) -->
+    <string name="template_picker_title">AIGC 模板</string>
+    <string name="template_picker_filter_label">按渠道过滤</string>
+
+    <!-- R5: Settings billing section (US-D-031-SETTINGS-BILLING-SECTION) -->
+    <string name="settings_billing_group_title">积分与计费</string>
+    <string name="settings_billing_vendor_entry">Vendor Billing</string>
+
+    <!-- R5/R6: Owner task approval dialog (task_approval) -->
+    <string name="task_approval_title">Task approval</string>
+    <string name="task_approval_approve">Approve</string>
+    <string name="task_approval_reject">Reject</string>
+
+    <!-- R5/R6: On-device console -->
+    <string name="on_device_console_title">On-device Console</string>
+    <string name="on_device_console_history">Console history</string>
+    <string name="on_device_console_hint">Enter a command…</string>
+    <string name="on_device_console_clear">Clear</string>
+    <string name="on_device_console_send">Send</string>
+    <string name="on_device_console_status">Status: model=%1$s role=%2$s network=%3$s</string>
+
+    <!-- R5/R6: Lobster role manager / store -->
+    <string name="lobster_role_manager_title">Lobster Roles</string>
+    <string name="lobster_role_store_button">Role Store</string>
+    <string name="lobster_role_new_button">New Role</string>
+    <string name="lobster_role_empty">No roles yet</string>
+    <string name="lobster_role_active_badge">Active</string>
+    <string name="lobster_role_edit">Edit</string>
+    <string name="lobster_role_delete">Delete</string>
+    <string name="lobster_role_activate">Activate</string>
+    <string name="lobster_role_pause">Pause</string>
+    <string name="lobster_role_resume">Resume</string>
+    <string name="lobster_role_disable">Disable</string>
+    <string name="lobster_role_enable">Enable</string>
+    <string name="lobster_role_delete_title">Delete role</string>
+    <string name="lobster_role_delete_message">Delete %1$s? This cannot be undone.</string>
+    <string name="lobster_role_delete_confirm">Delete</string>
+    <string name="lobster_role_deleted_toast">Role deleted: %1$s</string>
+    <string name="lobster_role_cancel">Cancel</string>
+    <string name="lobster_role_name_hint">Name</string>
+    <string name="lobster_role_role_hint">Role</string>
+    <string name="lobster_role_duties_hint">Duties</string>
+    <string name="lobster_role_new_title">New role</string>
+    <string name="lobster_role_edit_title">Edit role: %1$s</string>
+    <string name="lobster_role_save">Save</string>
+    <string name="lobster_role_validation">Name and role are required</string>
+    <string name="lobster_role_store_title">Role Store</string>
+    <string name="lobster_role_store_sync">Sync</string>
+    <string name="lobster_role_store_empty">No roles in store</string>
 </resources>

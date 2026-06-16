@@ -84,4 +84,10 @@
     <color name="colorInfoOnPrimary">#FFFFFFFF</color>
     <color name="colorInfoContainer">#FFEEF9FF</color>
     <color name="colorInfoOnContainer">#FF007BBE</color>
+
+    <!-- R5: Capability badge (US-D-025-NATIVE-AUDIO-CAPABILITY-BADGE) -->
+    <color name="capability_badge_bg">#FFE6F0FF</color>
+    <color name="capability_badge_text">#FF1A56DB</color>
+    <color name="capability_badge_note">#FF6B7280</color>
+    <color name="capability_badge_stroke">#FF1A56DB</color>
 </resources>

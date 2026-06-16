@@ -52,20 +52,25 @@ class CloudHeartbeatWorker(
         val heartbeatRequest = manager.buildHeartbeatRequest()
 
         // 发送心跳
-        val result = try {
+        val kotlinResult = try {
             client.sendHeartbeat(heartbeatRequest)
         } catch (e: Exception) {
             XLog.e(TAG, "心跳发送异常", e)
-            Result.failure<DeviceHeartbeat200Response>(e)
+            null
         }
 
-        if (result.isFailure) {
+        if (kotlinResult == null) {
+            manager.recordHeartbeatFailure()
+            return@withContext Result.retry()
+        }
+
+        if (kotlinResult.isFailure) {
             manager.recordHeartbeatFailure()
             return@withContext Result.retry()
         }
 
         // 心跳成功，喂入响应到遥测工具
-        manager.onHeartbeatResponse(result.getOrThrow())
+        kotlinResult.getOrNull()?.let { manager.onHeartbeatResponse(it) }
 
         // 心跳成功，拉取待处理任务
         manager.recordHeartbeatSuccess()
@@ -108,6 +113,26 @@ class CloudHeartbeatManager private constructor(
     // R7 心跳遥测
     private val clockSkewDetector = ClockSkewDetector()
     private val skillVersionCache = SkillVersionCache()
+
+    /**
+     * HMAC 签名时间偏移（毫秒）：当 serverTime 与本地时间偏差 > 4min 时由 [onHeartbeatResponse] 设置。
+     * [RetrofitDeviceCloudClient] 通过 [getHmacTimeOffsetMillis] 拉取此值，
+     * 后续 HMAC `X-Claw-Timestamp` 改用 `nowMillis - hmacTimeOffsetMillis` 计算，
+     * 避免时钟漂移导致 401002 TIMESTAMP_EXPIRED。
+     *
+     * delta = localNow - serverTime。localNow 偏快 → delta > 0 → 用 `nowMillis - delta` 把时间往回拨到 serverTime 基准。
+     * delta < 0（localNow 偏慢）→ 用 `nowMillis - delta` 实际是 `nowMillis + |delta|` 把时间往前推到 serverTime 基准。
+     *
+     * @Volatile 跨线程可见：心跳线程写，HMAC 调用线程读
+     */
+    @Volatile
+    private var hmacTimeOffsetMillis: Long = 0L
+
+    /**
+     * 供 [RetrofitDeviceCloudClient] 读取的当前 HMAC 时间偏移（毫秒）。
+     * 默认为 0（无偏移），心跳检测到 WARN/OFFSET 后由 [onHeartbeatResponse] 写入。
+     */
+    fun getHmacTimeOffsetMillis(): Long = hmacTimeOffsetMillis
 
     /**
      * 初始化云端客户端。
@@ -196,7 +221,8 @@ class CloudHeartbeatManager private constructor(
         val deviceId = this.deviceId ?: return
 
         try {
-            val tasks = client.getPendingTasks(deviceId)
+            val result = client.getPendingTasks(deviceId)
+            val tasks = result.getOrNull()?.data.orEmpty()
             if (tasks.isNotEmpty()) {
                 XLog.i(TAG, "拉取到 ${tasks.size} 个待处理任务")
                 // 触发任务分发（通过回调或广播）
@@ -243,8 +269,16 @@ class CloudHeartbeatManager private constructor(
         val serverTime = data.serverTime
         if (serverTime != 0L) {
             val skewResult = clockSkewDetector.update(localNow, serverTime, SKEW_THRESHOLD_MILLIS)
-            if (skewResult.state == ClockSkewDetector.SkewState.WARN) {
-                XLog.w(TAG, "clock_skew_exceeded: skew=${skewResult.deltaMillis}ms (threshold=${SKEW_THRESHOLD_MILLIS}ms)")
+            if (skewResult.state == ClockSkewDetector.SkewState.WARN ||
+                skewResult.state == ClockSkewDetector.SkewState.OFFSET
+            ) {
+                XLog.w(
+                    TAG,
+                    "clock-skew: localDeltaMs=${skewResult.deltaMillis} state=${skewResult.state} " +
+                        "(threshold=${SKEW_THRESHOLD_MILLIS}ms) — HMAC 签名切换到 serverTime 基准",
+                )
+                // US-D-037 PRD AC: 偏差 >4min 时后续 HMAC 签名以 serverTime 基准计算
+                hmacTimeOffsetMillis = skewResult.deltaMillis
             }
         }
 

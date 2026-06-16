@@ -50,8 +50,8 @@ class PollingPolicy(
     @Suppress("UNUSED_PARAMETER")
     fun nextDelayMillis(attemptIndex: Int, elapsedSinceStart: Long): Long {
         return when {
-            attemptIndex <= phase1MaxAttempts -> phase1IntervalMillis
-            attemptIndex <= phase1MaxAttempts + phase2MaxAttempts -> phase2IntervalMillis
+            attemptIndex < phase1MaxAttempts -> phase1IntervalMillis
+            attemptIndex < phase1MaxAttempts + phase2MaxAttempts -> phase2IntervalMillis
             else -> phase3IntervalMillis.coerceAtMost(maxIntervalMillis)
         }
     }

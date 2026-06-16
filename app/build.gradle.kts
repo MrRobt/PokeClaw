@@ -59,6 +59,7 @@ android {
         buildConfigField("String", "VERSION_INFO", getVersionGit())
         buildConfigField("String", "APP_ORIGIN", "\"PokeClaw by agents.io | github.com/agents-io/PokeClaw\"")
         buildConfigField("String", "BUILD_FINGERPRINT", "\"${getBuildFingerprint()}\"")
+        buildConfigField("Boolean", "CLOUD_WS_ENABLED", "false")
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
@@ -93,6 +94,17 @@ android {
     buildFeatures {
         buildConfig = true
         compose = true
+    }
+
+    // Unit tests run on the JVM without the real Android framework. Without
+    // this flag, any call to android.util.Log / Context.getString / etc. throws
+    // "Method ... not mocked." Returning default values keeps tests focused on
+    // logic and avoids forcing every test to call XLog.setTestMode(true).
+    testOptions {
+        unitTests {
+            isIncludeAndroidResources = false
+            isReturnDefaultValues = true
+        }
     }
 
     packaging {
@@ -170,6 +182,9 @@ dependencies {
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)
     testImplementation(libs.okhttp.mockwebserver)
+    // org.json is provided by Android at runtime, but unit tests run on the JVM
+    // without it. Pull in the reference implementation so parser tests work.
+    testImplementation("org.json:json:20240303")
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
 }

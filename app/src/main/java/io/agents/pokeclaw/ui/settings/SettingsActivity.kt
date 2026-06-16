@@ -42,6 +42,10 @@ import kotlinx.coroutines.withContext
  */
 class SettingsActivity : BaseActivity() {
 
+    companion object {
+        private const val TAG = "SettingsActivity"
+    }
+
     // Poll permissions every second (same as original HomeActivity)
     private val handler = Handler(Looper.getMainLooper())
     private val permPoller = object : Runnable {
@@ -142,7 +146,7 @@ class SettingsActivity : BaseActivity() {
     private fun applyThemeToGroups(tc: io.agents.pokeclaw.ui.chat.ThemeManager.ChatColors) {
         val groups = listOf(
             R.id.permissionsGroup, R.id.channelGroup, R.id.modelGroup,
-            R.id.appearanceGroup, R.id.toolsGroup, R.id.remoteGroup, R.id.aboutGroup
+            R.id.appearanceGroup, R.id.toolsGroup, R.id.remoteGroup, R.id.billingGroup, R.id.aboutGroup
         )
         for (id in groups) {
             val g = findViewById<MenuGroup>(id) ?: continue
@@ -398,6 +402,21 @@ class SettingsActivity : BaseActivity() {
             showDivider = false
         ).apply {
             setTrailingText("Coming soon")
+        }
+
+        // R5: Credits & Billing (US-D-031-SETTINGS-BILLING-SECTION)
+        val billingGroup = findViewById<MenuGroup>(R.id.billingGroup)
+        billingGroup.setTitle(getString(R.string.settings_billing_group_title))
+        billingGroup.addMenuItem(
+            leadingIcon = android.R.drawable.ic_menu_recent_history,
+            title = getString(R.string.settings_billing_vendor_entry),
+            onClick = { openVendorBilling() },
+            showDivider = false
+        ).apply {
+            val count = io.agents.pokeclaw.ui.settings.VendorBillingRegistry.all().size
+            setTrailingText(
+                if (count == 0) "—" else "$count vendor(s)",
+            )
         }
 
         // About
@@ -681,6 +700,16 @@ class SettingsActivity : BaseActivity() {
             actionTitle = getString(R.string.unbind_action),
             onAction = onUnbind
         )
+    }
+
+    private fun openVendorBilling() {
+        try {
+            val intent = android.content.Intent(this, io.agents.pokeclaw.ui.settings.VendorBillingActivity::class.java)
+            startActivity(intent)
+        } catch (e: Exception) {
+            XLog.w(TAG, "openVendorBilling failed", e)
+            Toast.makeText(this, "Open failed: ${e.message}", Toast.LENGTH_SHORT).show()
+        }
     }
 
     private fun showBudgetDialog() {

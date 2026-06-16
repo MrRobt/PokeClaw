@@ -3,6 +3,7 @@
 
 package io.agents.pokeclaw.cloudnode
 
+import io.agents.pokeclaw.agent.learning.TaskLearningManager
 import io.agents.pokeclaw.agent.skill.SkillExecutor
 import io.agents.pokeclaw.agent.skill.SkillRegistry
 import io.agents.pokeclaw.utils.XLog
@@ -17,6 +18,7 @@ import io.agents.pokeclaw.utils.XLog
  */
 class CloudTaskExecutorBridge(
     private val skillExecutor: SkillExecutor? = null,
+    private val learningManager: TaskLearningManager? = null,
 ) {
     private val TAG = "CloudTaskExecutorBridge"
 
@@ -31,6 +33,13 @@ class CloudTaskExecutorBridge(
         val mapping = CloudTaskSkillMapper.mapToSkill(task.instruction)
         if (mapping == null) {
             XLog.w(TAG, "无法映射指令到技能: ${task.instruction}")
+            learningManager?.recordFailure(
+                taskId = task.taskId,
+                taskText = task.instruction,
+                errorCategory = "CLOUD_SKILL",
+                errorCode = "TASK_REJECTED",
+                recoveryHint = "No deterministic skill mapping is available.",
+            )
             return CloudTaskExecutionResult.failure(
                 message = "不支持的任务类型: ${task.instruction}",
                 errorCode = CloudTaskErrorCode.TASK_REJECTED,
@@ -40,19 +49,45 @@ class CloudTaskExecutorBridge(
 
         XLog.d(TAG, "指令映射结果: skillId=${mapping.skillId}, confidence=${mapping.confidence}")
 
-        // 2. 技能查找
+        
         val skill = CloudTaskSkillMapper.resolveSkill(mapping)
         if (skill == null) {
-            XLog.w(TAG, "技能未注册: ${mapping.skillId}")
+            XLog.w(TAG, "Skill not registered: ${mapping.skillId}")
+            learningManager?.recordFailure(
+                taskId = task.taskId,
+                taskText = task.instruction,
+                errorCategory = "CLOUD_SKILL",
+                errorCode = "SKILL_NOT_READY",
+                recoveryHint = mapping.skillId,
+            )
             return CloudTaskExecutionResult.failure(
-                message = "技能未就绪: ${mapping.skillId}",
+                message = "Skill not ready: ${mapping.skillId}",
                 errorCode = CloudTaskErrorCode.TOOL_FAILED,
                 retryable = true
             )
         }
 
-        // 3. 执行（当前版本为最小闭环，仅模拟执行，不真操作手机）
-        return simulateExecute(task, skill, mapping)
+        SkillRegistry.onSelection(skill)
+
+        val result = simulateExecute(task, skill, mapping)
+        SkillRegistry.updateRuntimeStats(
+            skillId = skill.id,
+            success = result.success,
+            roundSuccess = result.success,
+            isFallback = false,
+        )
+        if (result.success) {
+            learningManager?.recordSuccess(task.taskId, task.instruction, result.message)
+        } else {
+            learningManager?.recordFailure(
+                taskId = task.taskId,
+                taskText = task.instruction,
+                errorCategory = "CLOUD_SKILL",
+                errorCode = result.errorCode.name,
+                recoveryHint = result.message,
+            )
+        }
+        return result
     }
 
     /**

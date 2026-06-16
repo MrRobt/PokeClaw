@@ -29,17 +29,26 @@ class AppViewModel : ViewModel() {
 
     private var _commonInitialized = false
 
-    val taskOrchestrator = TaskOrchestrator(
-        agentConfigProvider = { getAgentConfig() },
-        onTaskFinished = { /* refresh */ }
-    )
+    private val taskOrchestratorLazy = lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+        TaskOrchestrator(
+            agentConfigProvider = { getAgentConfig() },
+            onTaskFinished = { /* refresh */ }
+        )
+    }
 
-    private val channelSetup = ChannelSetup(taskOrchestrator = taskOrchestrator)
+    val taskOrchestrator: TaskOrchestrator
+        get() = taskOrchestratorLazy.value
+
+    private val channelSetup by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+        ChannelSetup(taskOrchestrator = taskOrchestrator)
+    }
 
     val taskSessionStore: TaskSessionStore
         get() = taskOrchestrator.taskSessionStore
-    val inProgressTaskMessageId: String get() = taskSessionStore.snapshot().messageId
-    val inProgressTaskChannel: Channel? get() = taskSessionStore.snapshot().channel
+    val inProgressTaskMessageId: String
+        get() = if (taskOrchestratorLazy.isInitialized()) taskSessionStore.snapshot().messageId else ""
+    val inProgressTaskChannel: Channel?
+        get() = if (taskOrchestratorLazy.isInitialized()) taskSessionStore.snapshot().channel else null
 
     // ==================== Task API (clean interface for Activity) ====================
 
@@ -56,6 +65,7 @@ class AppViewModel : ViewModel() {
         onEvent: (TaskEvent) -> Unit,
     ) {
         onBeforeTask?.invoke()
+        ClawApplication.awaitRuntimeBootstrapReady()
         taskOrchestrator.taskEventCallback = onEvent
         if (!updateAgentConfig()) {
             onEvent(TaskEvent.Failed("AI service not ready"))
@@ -65,13 +75,18 @@ class AppViewModel : ViewModel() {
     }
 
     fun stopTask() {
-        taskOrchestrator.cancelCurrentTask()
+        if (taskOrchestratorLazy.isInitialized()) {
+            taskOrchestrator.cancelCurrentTask()
+        }
     }
 
-    fun isTaskRunning(): Boolean = taskSessionStore.isTaskRunning()
+    fun isTaskRunning(): Boolean =
+        taskOrchestratorLazy.isInitialized() && taskSessionStore.isTaskRunning()
 
     fun clearTaskCallback() {
-        taskOrchestrator.taskEventCallback = null
+        if (taskOrchestratorLazy.isInitialized()) {
+            taskOrchestrator.taskEventCallback = null
+        }
     }
 
     fun init() {
@@ -95,7 +110,10 @@ class AppViewModel : ViewModel() {
             maxIterations = 60
         )
 
-    fun updateAgentConfig(): Boolean = taskOrchestrator.updateAgentConfig()
+    fun updateAgentConfig(): Boolean {
+        if (!KVUtils.hasLlmConfig()) return false
+        return taskOrchestrator.updateAgentConfig()
+    }
 
     fun afterInit() {
         acquireScreenWakeLock()

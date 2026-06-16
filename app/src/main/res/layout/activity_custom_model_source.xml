@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:padding="16dp">
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="支持 HTTPS URL，仅限 huggingface.co / github.com / gitlab.com / raw.githubusercontent.com 域名。最多 10 条。长按条目可删除。"
+        android:textSize="12sp"
+        android:paddingBottom="8dp"
+        android:alpha="0.7" />
+
+    <Button
+        android:id="@+id/btn_custom_source_add"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="+ 添加模型源" />
+
+    <ListView
+        android:id="@+id/lv_custom_sources"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:divider="@android:color/darker_gray"
+        android:dividerHeight="1dp" />
+</LinearLayout>

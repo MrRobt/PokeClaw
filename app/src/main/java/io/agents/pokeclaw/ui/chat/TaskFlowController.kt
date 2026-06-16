@@ -19,6 +19,7 @@ import io.agents.pokeclaw.TaskEvent
 import io.agents.pokeclaw.agent.DirectDeviceDataGuard
 import io.agents.pokeclaw.agent.PipelineRouter
 import io.agents.pokeclaw.agent.TaskPromptEnvelope
+import io.agents.pokeclaw.agent.learning.TaskLearningManager
 import io.agents.pokeclaw.agent.llm.ModelConfigRepository
 import io.agents.pokeclaw.service.ClawAccessibilityService
 import io.agents.pokeclaw.service.ForegroundService
@@ -60,6 +61,7 @@ class TaskFlowController(
     private var sendTaskRetryCount = 0
     private var lastMonitorStatusNote: String? = null
     private val pipelineRouter = PipelineRouter(activity)
+    private val learningManager = TaskLearningManager(activity)
 
     fun sendTask(text: String) {
         if (appViewModel.isTaskRunning()) {
@@ -202,16 +204,35 @@ class TaskFlowController(
         uiState.messages.add(ChatMessage(ChatMessage.Role.ASSISTANT, "..."))
 
         executor.submit {
+            val taskId = "direct_${System.currentTimeMillis()}"
             try {
                 val result = ToolRegistry.getInstance().executeTool(toolCall.toolName, toolCall.params)
+                val answer = result.data ?: result.error ?: "Done."
+                if (result.isSuccess) {
+                    learningManager.recordSuccess(taskId, text, answer)
+                } else {
+                    learningManager.recordFailure(
+                        taskId = taskId,
+                        taskText = text,
+                        errorCategory = "DIRECT_TOOL",
+                        errorCode = toolCall.toolName,
+                        recoveryHint = answer,
+                    )
+                }
                 activity.runOnUiThread {
-                    val answer = result.data ?: result.error ?: "Done."
                     replaceTypingIndicator(answer)
                     onTaskTerminal?.invoke(TaskEvent.Completed(answer))
                     cleanupAfterTask()
                 }
             } catch (e: Exception) {
                 XLog.e(TAG, "executeDirectToolTask failed: ${e.message}", e)
+                learningManager.recordFailure(
+                    taskId = taskId,
+                    taskText = text,
+                    errorCategory = "DIRECT_TOOL",
+                    errorCode = toolCall.toolName,
+                    recoveryHint = e.message ?: "Direct tool failed",
+                )
                 activity.runOnUiThread {
                     replaceTypingIndicator("Error: ${e.message}")
                     onTaskTerminal?.invoke(TaskEvent.Failed(e.message ?: "Direct tool failed"))
@@ -332,6 +353,12 @@ class TaskFlowController(
                     uiState.isTaskRunning.value = true
                 }
                 is TaskEvent.TokenUpdate, is TaskEvent.Thinking -> Unit
+                is TaskEvent.NeedsHuman -> {
+                    XLog.i(TAG, "handleTaskEvent: NeedsHuman reason=${event.reason}")
+                    replaceTypingIndicator("⏸ ${event.reason}")
+                    onTaskTerminal?.invoke(event)
+                    cleanupAfterTask()
+                }
             }
         } catch (e: Exception) {
             XLog.w(TAG, "handleTaskEvent error", e)

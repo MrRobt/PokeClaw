@@ -3,17 +3,20 @@
 
 package io.agents.pokeclaw.tool.impl;
 
+import android.Manifest;
 import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothDevice;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
+import android.content.pm.PackageManager;
 import android.net.ConnectivityManager;
 import android.net.Network;
 import android.net.NetworkCapabilities;
 import android.net.wifi.WifiInfo;
 import android.net.wifi.WifiManager;
 import android.os.BatteryManager;
+import android.os.Build;
 import android.os.Environment;
 import android.os.StatFs;
 import android.provider.Settings;
@@ -74,7 +77,7 @@ public class GetDeviceInfoTool extends BaseTool {
                 case "battery": return getBatteryInfo(ctx);
                 case "wifi": return getWifiInfo(ctx);
                 case "storage": return getStorageInfo();
-                case "bluetooth": return getBluetoothInfo();
+                case "bluetooth": return getBluetoothInfo(ctx);
                 case "screen": return getScreenInfo(ctx);
                 case "device": return getDeviceDetails();
                 case "time": return getCurrentTime();
@@ -158,7 +161,7 @@ public class GetDeviceInfoTool extends BaseTool {
         return ToolResult.success(result);
     }
 
-    private ToolResult getBluetoothInfo() {
+    private ToolResult getBluetoothInfo(Context ctx) {
         BluetoothAdapter adapter = BluetoothAdapter.getDefaultAdapter();
         if (adapter == null) {
             return ToolResult.success("Bluetooth: not available on this device");
@@ -169,6 +172,12 @@ public class GetDeviceInfoTool extends BaseTool {
 
         StringBuilder sb = new StringBuilder();
         sb.append("Bluetooth: enabled");
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
+                && ctx.checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT)
+                != PackageManager.PERMISSION_GRANTED) {
+            sb.append(" (paired device list requires Bluetooth permission)");
+            return ToolResult.success(sb.toString());
+        }
 
         try {
             Set<BluetoothDevice> bonded = adapter.getBondedDevices();

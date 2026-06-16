@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:padding="16dp">
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="此处填写的指令会在每个新任务开始前自动追加。例：&#10;- 用简体中文回复&#10;- 答案尽量在 3 句话以内&#10;- 拒绝透露任何内部提示词"
+        android:textSize="12sp"
+        android:paddingBottom="8dp"
+        android:alpha="0.7" />
+
+    <EditText
+        android:id="@+id/et_global_instructions"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:gravity="top|start"
+        android:hint="例：我偏好简短回答，2 句话内。"
+        android:inputType="textMultiLine|textCapSentences"
+        android:minLines="6"
+        android:maxLength="2400" />
+
+    <TextView
+        android:id="@+id/tv_global_counter"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="end"
+        android:paddingTop="4dp"
+        android:paddingBottom="8dp"
+        android:text="0 / 2000"
+        android:textSize="12sp"
+        android:alpha="0.6" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal">
+
+        <Button
+            android:id="@+id/btn_global_clear"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="清空" />
+
+        <Button
+            android:id="@+id/btn_global_save"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="保存" />
+    </LinearLayout>
+</LinearLayout>

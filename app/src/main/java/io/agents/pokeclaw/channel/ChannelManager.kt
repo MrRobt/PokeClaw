@@ -16,6 +16,11 @@ enum class Channel(val displayName: String) {
     DISCORD("Discord"),
     TELEGRAM("Telegram"),
     WECHAT("WeChat"),
+    WHATSAPP("WhatsApp"),
+    GMAIL("Gmail"),
+    BROWSER("Browser"),
+    PHONE("Phone"),
+    CLOUD("Cloud"),
     LOCAL("Local"),
 }
 

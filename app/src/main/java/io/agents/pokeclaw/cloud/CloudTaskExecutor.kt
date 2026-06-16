@@ -8,8 +8,12 @@ import io.agents.pokeclaw.agent.skill.Skill
 import io.agents.pokeclaw.agent.skill.SkillExecutor
 import io.agents.pokeclaw.agent.skill.SkillRegistry
 import io.agents.pokeclaw.cloud.model.PendingTaskItem
+import io.agents.pokeclaw.cloud.model.TaskMode
+import io.agents.pokeclaw.cloud.model.modeAsEnum
 import io.agents.pokeclaw.cloudnode.CloudTaskErrorCode
 import io.agents.pokeclaw.cloudnode.CloudTaskExecutionResult
+import io.agents.pokeclaw.cloudnode.CloudTaskSkillMapper
+import io.agents.pokeclaw.cloudnode.SkillMapping
 import io.agents.pokeclaw.utils.XLog
 
 /**
@@ -58,6 +62,27 @@ class LocalAgentTaskExecutor(
                 message = "任务指令为空",
                 errorCode = CloudTaskErrorCode.TASK_REJECTED,
                 retryable = false,
+            )
+        }
+
+        // 0. mode 预处理：dry_run / prepare_only（v1.1.0 扩展）跳过真实执行，
+        //    上报固定 stub 字符串 + 完整 artifacts，让云端能区分"未执行"与"执行失败"。
+        val mode = task.modeAsEnum()
+        if (mode == TaskMode.DRY_RUN || mode == TaskMode.PREPARE_ONLY) {
+            val stubMessage = when (mode) {
+                TaskMode.DRY_RUN -> "DRY_RUN_OK：仅校验指令映射，不实际执行"
+                TaskMode.PREPARE_ONLY -> "PREPARED：跳过主流程，前置准备由调用方接管"
+                else -> "noop"
+            }
+            XLog.i(TAG, "execute: 任务 mode=$mode 跳过实际执行，taskUuid=${task.taskUuid}")
+            return CloudTaskExecutionResult.success(
+                message = stubMessage,
+                artifacts = listOf(
+                    "mode:${mode.raw}",
+                    "taskUuid:${task.taskUuid}",
+                    "command:${command.take(120)}",
+                    "dry_run:true",
+                ),
             )
         }
 

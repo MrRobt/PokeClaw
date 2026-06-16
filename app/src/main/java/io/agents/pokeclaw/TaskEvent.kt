@@ -50,4 +50,7 @@ sealed class TaskEvent {
 
     /** Thinking/content stream from LLM (non-streaming mode). */
     data class Thinking(val content: String) : TaskEvent()
+
+    /** Task requires human approval / input to continue. */
+    data class NeedsHuman(val reason: String) : TaskEvent()
 }

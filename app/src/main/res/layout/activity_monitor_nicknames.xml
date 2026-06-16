@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:padding="16dp">
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="为监控对象设置友好昵称。即使对方修改了显示名，匹配仍按稳定 ID (phone:/tg:/label:) 进行。短按编辑，长按删除。"
+        android:textSize="12sp"
+        android:paddingBottom="8dp"
+        android:alpha="0.7" />
+
+    <Button
+        android:id="@+id/btn_nickname_add"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="+ 添加昵称" />
+
+    <ListView
+        android:id="@+id/lv_monitor_nicknames"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:divider="@android:color/darker_gray"
+        android:dividerHeight="1dp" />
+</LinearLayout>

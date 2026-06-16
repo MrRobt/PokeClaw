@@ -34,12 +34,15 @@ data class DeviceRegisterRequest(
  * 设备注册响应
  */
 data class DeviceRegisterResponse(
+    @SerializedName("deviceId")
+    val deviceId: String? = null,
+
     @SerializedName("deviceToken")
     val deviceToken: String,
-    
+
     @SerializedName("refreshToken")
     val refreshToken: String,
-    
+
     @SerializedName("expiresIn")
     val expiresIn: Int
 )
@@ -140,6 +143,11 @@ data class TaskResultRequest(
 
     @SerializedName("modelUsed")
     val modelUsed: String? = null,
+
+    // R5: credit consumed by this task (US-D-026-TASK-COST-CHIP-IN-CHAT).
+    // Mirrors billing_vendor_charge_record.credit_consumed.
+    @SerializedName("creditConsumed")
+    val creditConsumed: Long? = null,
 
     // 新增：失败回传字段
     @SerializedName("errorCategory")

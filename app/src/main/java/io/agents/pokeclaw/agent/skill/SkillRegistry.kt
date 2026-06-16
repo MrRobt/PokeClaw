@@ -13,6 +13,7 @@ object SkillRegistry {
 
     private const val TAG = "SkillRegistry"
     private val skills = linkedMapOf<String, Skill>()
+    @Volatile private var runtimeStatsLoaded = false
 
     /**
      * 注册技能，重复 ID 覆盖。
@@ -88,7 +89,7 @@ object SkillRegistry {
     /**
      * 加载内置技能，补齐运行时指标目录。
      */
-    fun loadBuiltInSkills() {
+    fun registerBuiltInSkillDefinitions() {
         register(BuiltInSkills.searchInApp())
         register(BuiltInSkills.submitForm())
         register(BuiltInSkills.dismissPopup())
@@ -98,17 +99,33 @@ object SkillRegistry {
         register(BuiltInSkills.swipeGesture())
         register(BuiltInSkills.goBack())
         register(BuiltInSkills.waitForContent())
-        // 云端执行节点技能
+        // Cloud execution node skills.
         register(BuiltInSkills.launchApp())
         register(BuiltInSkills.findAndTap())
         register(BuiltInSkills.inputText())
         register(BuiltInSkills.screenshot())
-
-        SkillStatsStore.loadFromDisk()
-        SkillStatsStore.syncWithSkillCatalog(skills.values)
-        SkillStatsStore.evictIfNeeded()
-        XLog.i(TAG, "Loaded ${skills.size} built-in skills")
+        XLog.i(TAG, "Registered ${skills.size} built-in skills")
     }
 
-    fun clear() = skills.clear()
+    fun loadRuntimeStats() {
+        if (runtimeStatsLoaded) return
+        synchronized(this) {
+            if (runtimeStatsLoaded) return
+            SkillStatsStore.loadFromDisk()
+            SkillStatsStore.syncWithSkillCatalog(skills.values)
+            SkillStatsStore.evictIfNeeded()
+            runtimeStatsLoaded = true
+            XLog.i(TAG, "Loaded built-in skill runtime stats")
+        }
+    }
+
+    fun loadBuiltInSkills() {
+        registerBuiltInSkillDefinitions()
+        loadRuntimeStats()
+    }
+
+    fun clear() {
+        skills.clear()
+        runtimeStatsLoaded = false
+    }
 }

@@ -53,6 +53,12 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content" />
 
+            <!-- R5: Credits & Billing (US-D-031-SETTINGS-BILLING-SECTION) -->
+            <io.agents.pokeclaw.widget.MenuGroup
+                android:id="@+id/billingGroup"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content" />
+
             <!-- About -->
             <io.agents.pokeclaw.widget.MenuGroup
                 android:id="@+id/aboutGroup"

@@ -6,6 +6,11 @@ package io.agents.pokeclaw.cloud
 
 import io.agents.pokeclaw.cloud.api.DeviceApi
 import io.agents.pokeclaw.cloud.auth.CloudDeviceTokenStore
+import io.agents.pokeclaw.cloud.lobster.api.LobsterCommandApi
+import io.agents.pokeclaw.cloud.lobster.api.LobsterMemoryApi
+import io.agents.pokeclaw.cloud.lobster.api.LobsterPersonalityApi
+import io.agents.pokeclaw.cloud.lobster.api.LobsterProfileApi
+import io.agents.pokeclaw.cloud.lobster.api.LobsterSkillMarketplaceApi
 import io.agents.pokeclaw.utils.XLog
 import okhttp3.Interceptor
 import okhttp3.OkHttpClient
@@ -32,14 +37,82 @@ object CloudClientFactory {
     private const val CONNECT_TIMEOUT_SECONDS = 30L
     private const val READ_TIMEOUT_SECONDS = 60L
 
+    /**
+     * 规范化 baseUrl：补齐结尾斜杠，并校验必须以 http:// 或 https:// 开头。
+     *
+     * @throws IllegalArgumentException 当 scheme 不合法
+     */
+    fun normalizeBaseUrl(raw: String): String {
+        require(raw.startsWith("http://") || raw.startsWith("https://")) {
+            "baseUrl 必须以 http:// 或 https:// 开头：$raw"
+        }
+        return if (raw.endsWith("/")) raw else "$raw/"
+    }
+
     fun buildDeviceApi(baseUrl: String, tokenStore: CloudDeviceTokenStore): DeviceApi {
         val okHttpClient = buildOkHttpClient(tokenStore)
-        val retrofit = Retrofit.Builder()
-            .baseUrl(if (baseUrl.endsWith("/")) baseUrl else "$baseUrl/")
+        val retrofit = buildRetrofit(baseUrl, okHttpClient)
+        return retrofit.create(DeviceApi::class.java)
+    }
+
+    /**
+     * US-D-038 主人指令通道客户端构造。
+     *
+     * 复用设备层 [DeviceTokenInterceptor]：lobster/command 与 hermes/feedback 端点
+     * 在 dyq v1.1.0 同样要求 deviceToken 鉴权（共享同一 deviceToken 命名空间）。
+     */
+    fun buildLobsterCommandApi(baseUrl: String, tokenStore: CloudDeviceTokenStore): LobsterCommandApi {
+        val okHttpClient = buildOkHttpClient(tokenStore)
+        val retrofit = buildRetrofit(baseUrl, okHttpClient)
+        return retrofit.create(LobsterCommandApi::class.java)
+    }
+
+    /**
+     * US-D-039 Skill Marketplace 客户端构造。
+     *
+     * 复用设备层 [DeviceTokenInterceptor]：lobster/skill 端点同样要求 deviceToken 鉴权。
+     */
+    fun buildSkillMarketplaceApi(baseUrl: String, tokenStore: CloudDeviceTokenStore): LobsterSkillMarketplaceApi {
+        val okHttpClient = buildOkHttpClient(tokenStore)
+        val retrofit = buildRetrofit(baseUrl, okHttpClient)
+        return retrofit.create(LobsterSkillMarketplaceApi::class.java)
+    }
+
+    /**
+     * US-D-040 记忆 API 构造。
+     */
+    fun buildLobsterMemoryApi(baseUrl: String, tokenStore: CloudDeviceTokenStore): LobsterMemoryApi {
+        val okHttpClient = buildOkHttpClient(tokenStore)
+        val retrofit = buildRetrofit(baseUrl, okHttpClient)
+        return retrofit.create(LobsterMemoryApi::class.java)
+    }
+
+    /**
+     * US-D-040 人格 API 构造。
+     */
+    fun buildLobsterPersonalityApi(baseUrl: String, tokenStore: CloudDeviceTokenStore): LobsterPersonalityApi {
+        val okHttpClient = buildOkHttpClient(tokenStore)
+        val retrofit = buildRetrofit(baseUrl, okHttpClient)
+        return retrofit.create(LobsterPersonalityApi::class.java)
+    }
+
+    /**
+     * US-D-041 Profile API 构造。
+     *
+     * 复用设备层 [DeviceTokenInterceptor]：lobster/my 端点同样要求 deviceToken 鉴权。
+     */
+    fun buildLobsterProfileApi(baseUrl: String, tokenStore: CloudDeviceTokenStore): LobsterProfileApi {
+        val okHttpClient = buildOkHttpClient(tokenStore)
+        val retrofit = buildRetrofit(baseUrl, okHttpClient)
+        return retrofit.create(LobsterProfileApi::class.java)
+    }
+
+    private fun buildRetrofit(baseUrl: String, okHttpClient: OkHttpClient): Retrofit {
+        return Retrofit.Builder()
+            .baseUrl(normalizeBaseUrl(baseUrl))
             .client(okHttpClient)
             .addConverterFactory(GsonConverterFactory.create())
             .build()
-        return retrofit.create(DeviceApi::class.java)
     }
 
     private fun buildOkHttpClient(tokenStore: CloudDeviceTokenStore): OkHttpClient {
@@ -70,7 +143,7 @@ class DeviceTokenInterceptor(
     override fun intercept(chain: Interceptor.Chain): Response {
         val request = chain.request()
         val builder = request.newBuilder()
-        val url = request.url().toString()
+        val url = request.url.toString()
         if (shouldAddAuth(url)) {
             val token = tokenStore.snapshot()?.deviceToken
             if (!token.isNullOrBlank()) {

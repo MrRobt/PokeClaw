@@ -46,7 +46,31 @@ class RetrofitDeviceCloudClient(
     private val nowProvider: () -> Long = { System.currentTimeMillis() },
     private val onAuthFailed: (() -> Unit)? = null,
     private val gson: Gson = Gson(),
+    /**
+     * US-D-037 HMAC 时间偏移：来自 [CloudHeartbeatManager.getHmacTimeOffsetMillis]。
+     * 当 device clock 与 server clock 偏差 > 4min 时，HMAC `X-Claw-Timestamp`
+     * 应改用 `nowMillis - hmacTimeOffset` 计算（与 serverTime 基准对齐），避免 401002 TIMESTAMP_EXPIRED。
+     * 默认 0L 表示不偏移（与 R7 之前行为一致）。
+     */
+    private val hmacTimeOffsetProvider: () -> Long = { 0L },
 ) : DeviceCloudClient {
+
+    /**
+     * 设置 HMAC 时间偏移 provider。WARN/OFFSET 检测到时由 [CloudHeartbeatManager] 注入。
+     * 用于在 client 构造晚于 manager 初始化的场景下重新绑定。
+     */
+    fun setHmacTimeOffsetProvider(provider: () -> Long) {
+        latestHmacTimeOffsetProvider = provider
+    }
+
+    @Volatile
+    private var latestHmacTimeOffsetProvider: () -> Long = hmacTimeOffsetProvider
+
+    /**
+     * 计算 HMAC 签名时间戳：本地时间减去 [latestHmacTimeOffsetProvider] 报告的偏移。
+     * 偏移 0 时退化为本地时间（与 R7 之前行为完全一致）。
+     */
+    private fun hmacNowMillis(): Long = nowProvider() - latestHmacTimeOffsetProvider()
 
     companion object {
         private const val TAG = "PokeClaw/RetrofitDeviceCloudClient"
@@ -66,6 +90,7 @@ class RetrofitDeviceCloudClient(
             tokenStore: CloudDeviceTokenStore,
             offlineQueue: OfflineResultQueue? = null,
             onAuthFailed: (() -> Unit)? = null,
+            hmacTimeOffsetProvider: () -> Long = { 0L },
         ): RetrofitDeviceCloudClient {
             val api = CloudClientFactory.buildDeviceApi(baseUrl, tokenStore)
             return RetrofitDeviceCloudClient(
@@ -73,6 +98,7 @@ class RetrofitDeviceCloudClient(
                 tokenStore = tokenStore,
                 offlineQueue = offlineQueue,
                 onAuthFailed = onAuthFailed,
+                hmacTimeOffsetProvider = hmacTimeOffsetProvider,
             )
         }
     }
@@ -143,7 +169,7 @@ class RetrofitDeviceCloudClient(
         val bodyBytes = gson.toJson(request).toByteArray(Charsets.UTF_8)
         val path = SUBMIT_RESULT_PATH_FORMAT.format(taskUuid)
         val result = callWithHmac("submitTaskResult", path, bodyBytes) { ts, nonce, sig ->
-            api.submitTaskResult(taskUuid, request, ts, nonce, sig)
+            api.submitTaskResult(taskUuid, ts, nonce, sig, request)
         }
         if (result.isFailure && result.exceptionOrNull() !is HmacAuthException) {
             // 离线入队（HmacAuthException 不应入队，需要重算签名）
@@ -189,9 +215,13 @@ class RetrofitDeviceCloudClient(
         val bodyBytes = gson.toJson(request).toByteArray(Charsets.UTF_8)
         val path = CANCEL_TASK_PATH_FORMAT.format(taskUuid)
         val result = callWithHmac("cancelTask", path, bodyBytes) { ts, nonce, sig ->
-            api.cancelTask(taskUuid, request, ts, nonce, sig)
+            api.cancelTask(taskUuid, ts, nonce, sig, request)
         }
-        if (result.isFailure && result.exceptionOrNull() !is HmacAuthException) {
+        // 仅网络异常（IOException）才入离线队列：
+        // - 5xx 视为服务端错误，不入队（等下次心跳再试）
+        // - 401/403 HMAC 鉴权失败由 onAuthFailed 处理
+        val ex = result.exceptionOrNull()
+        if (result.isFailure && ex is java.io.IOException) {
             enqueueOfflineResult(taskUuid, request)
         }
         return result
@@ -218,7 +248,7 @@ class RetrofitDeviceCloudClient(
             val bodyBytes = gson.toJson(event.payload).toByteArray(Charsets.UTF_8)
             val path = SUBMIT_RESULT_PATH_FORMAT.format(event.taskUuid)
             val result = callWithHmac("flushOfflineQueue", path, bodyBytes) { ts, nonce, sig ->
-                api.submitTaskResult(event.taskUuid, event.payload, ts, nonce, sig)
+                api.submitTaskResult(event.taskUuid, ts, nonce, sig, event.payload)
             }
             if (result.isSuccess) {
                 queue.markSucceeded(event.requestId)
@@ -256,7 +286,7 @@ class RetrofitDeviceCloudClient(
             deviceToken = deviceToken,
             path = path,
             bodyBytes = bodyBytes,
-            nowMillis = nowProvider(),
+            nowMillis = hmacNowMillis(),
         )
         val result = runCatching {
             block(headers.timestampMillis, headers.nonce, headers.signature)
@@ -284,7 +314,7 @@ class RetrofitDeviceCloudClient(
         }
         val code = response.code()
         val errorBody = response.errorBody()?.string().orEmpty()
-        if (code == 401) {
+        if (code == 401 || code == 403) {
             val hmac = parseHmacErrorCode(errorBody)
             if (hmac != null) {
                 XLog.e(TAG, "$op: HMAC 鉴权失败 code=${hmac.errorCode} reason=${hmac.reason}")

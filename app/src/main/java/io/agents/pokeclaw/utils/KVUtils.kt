@@ -31,11 +31,34 @@ object KVUtils {
 
     private lateinit var mmkv: MMKV
 
+    // JVM unit-test fallback: a thread-safe in-memory map used when MMKV
+    // is not initialised (no Android Context available). This lets KV-backed
+    // helpers (CustomModelSourceStore, etc.) participate in unit tests
+    // without requiring Robolectric.
+    private val testBacking: MutableMap<String, Any?> = java.util.concurrent.ConcurrentHashMap()
+
+    /**
+     * Test-only hook: replaces the in-memory fallback with a fresh empty map.
+     * Production code never calls this — the real MMKV path is unaffected.
+     */
+    @JvmStatic
+    fun resetTestBacking() {
+        testBacking.clear()
+    }
+
     private const val DEFAULT_INT = 0
     private const val DEFAULT_LONG = 0L
     private const val DEFAULT_BOOL = false
     private const val DEFAULT_FLOAT = 0f
     private const val DEFAULT_DOUBLE = 0.0
+
+    /**
+     * Returns true when [init] has been called and the backing MMKV instance
+     * is ready. Falls back to the in-memory test backing when MMKV is not
+     * initialised, so JVM unit tests can exercise read/write paths.
+     */
+    private val isReady: Boolean
+        get() = ::mmkv.isInitialized
 
     /**
      * Call to initialize in Application.onCreate
@@ -47,93 +70,113 @@ object KVUtils {
 
     // ==================== String ====================
     fun putString(key: String, value: String?): Boolean {
-        return mmkv.encode(key, value)
+        if (!isReady) { testBacking[key] = value; return true }
+        return runCatching { mmkv.encode(key, value) }.getOrDefault(false)
     }
 
     fun getString(key: String, defaultValue: String = ""): String {
-        return mmkv.decodeString(key, defaultValue) ?: defaultValue
+        if (!isReady) return testBacking[key] as? String ?: defaultValue
+        return runCatching { mmkv.decodeString(key, defaultValue) }.getOrNull() ?: defaultValue
     }
 
     // ==================== Int ====================
     fun putInt(key: String, value: Int): Boolean {
-        return mmkv.encode(key, value)
+        if (!isReady) { testBacking[key] = value; return true }
+        return runCatching { mmkv.encode(key, value) }.getOrDefault(false)
     }
 
     fun getInt(key: String, defaultValue: Int = DEFAULT_INT): Int {
-        return mmkv.decodeInt(key, defaultValue)
+        if (!isReady) return (testBacking[key] as? Int) ?: defaultValue
+        return runCatching { mmkv.decodeInt(key, defaultValue) }.getOrDefault(defaultValue)
     }
 
     // ==================== Long ====================
     fun putLong(key: String, value: Long): Boolean {
-        return mmkv.encode(key, value)
+        if (!isReady) { testBacking[key] = value; return true }
+        return runCatching { mmkv.encode(key, value) }.getOrDefault(false)
     }
 
     fun getLong(key: String, defaultValue: Long = DEFAULT_LONG): Long {
-        return mmkv.decodeLong(key, defaultValue)
+        if (!isReady) return (testBacking[key] as? Long) ?: defaultValue
+        return runCatching { mmkv.decodeLong(key, defaultValue) }.getOrDefault(defaultValue)
     }
 
     // ==================== Boolean ====================
     fun putBoolean(key: String, value: Boolean): Boolean {
-        return mmkv.encode(key, value)
+        if (!isReady) { testBacking[key] = value; return true }
+        return runCatching { mmkv.encode(key, value) }.getOrDefault(false)
     }
 
     fun getBoolean(key: String, defaultValue: Boolean = DEFAULT_BOOL): Boolean {
-        return mmkv.decodeBool(key, defaultValue)
+        if (!isReady) return (testBacking[key] as? Boolean) ?: defaultValue
+        return runCatching { mmkv.decodeBool(key, defaultValue) }.getOrDefault(defaultValue)
     }
 
     // ==================== Float ====================
     fun putFloat(key: String, value: Float): Boolean {
-        return mmkv.encode(key, value)
+        if (!isReady) { testBacking[key] = value; return true }
+        return runCatching { mmkv.encode(key, value) }.getOrDefault(false)
     }
 
     fun getFloat(key: String, defaultValue: Float = DEFAULT_FLOAT): Float {
-        return mmkv.decodeFloat(key, defaultValue)
+        if (!isReady) return (testBacking[key] as? Float) ?: defaultValue
+        return runCatching { mmkv.decodeFloat(key, defaultValue) }.getOrDefault(defaultValue)
     }
 
     // ==================== Double ====================
     fun putDouble(key: String, value: Double): Boolean {
-        return mmkv.encode(key, value)
+        if (!isReady) { testBacking[key] = value; return true }
+        return runCatching { mmkv.encode(key, value) }.getOrDefault(false)
     }
 
     fun getDouble(key: String, defaultValue: Double = DEFAULT_DOUBLE): Double {
-        return mmkv.decodeDouble(key, defaultValue)
+        if (!isReady) return (testBacking[key] as? Double) ?: defaultValue
+        return runCatching { mmkv.decodeDouble(key, defaultValue) }.getOrDefault(defaultValue)
     }
 
     // ==================== Bytes ====================
     fun putBytes(key: String, value: ByteArray?): Boolean {
-        return mmkv.encode(key, value)
+        if (!isReady) { testBacking[key] = value; return true }
+        return runCatching { mmkv.encode(key, value) }.getOrDefault(false)
     }
 
     fun getBytes(key: String): ByteArray? {
-        return mmkv.decodeBytes(key)
+        if (!isReady) return testBacking[key] as? ByteArray
+        return runCatching { mmkv.decodeBytes(key) }.getOrNull()
     }
 
     // ==================== Common Operations ====================
     fun contains(key: String): Boolean {
-        return mmkv.containsKey(key)
+        if (!isReady) return testBacking.containsKey(key)
+        return runCatching { mmkv.containsKey(key) }.getOrDefault(false)
     }
 
     fun remove(key: String) {
-        mmkv.removeValueForKey(key)
+        if (!isReady) { testBacking.remove(key); return }
+        runCatching { mmkv.removeValueForKey(key) }
     }
 
     fun remove(vararg keys: String) {
-        mmkv.removeValuesForKeys(keys)
+        if (!isReady) { keys.forEach { testBacking.remove(it) }; return }
+        runCatching { mmkv.removeValuesForKeys(keys) }
     }
 
     fun clear() {
-        mmkv.clearAll()
+        if (!isReady) { testBacking.clear(); return }
+        runCatching { mmkv.clearAll() }
     }
 
     fun getAllKeys(): Array<String> {
-        return mmkv.allKeys() ?: emptyArray()
+        if (!isReady) return testBacking.keys.toTypedArray()
+        return runCatching { mmkv.allKeys() ?: emptyArray() }.getOrDefault(emptyArray())
     }
 
     /**
      * Flush to disk synchronously (default is async)
      */
     fun sync() {
-        mmkv.sync()
+        if (!isReady) return
+        runCatching { mmkv.sync() }
     }
 
 
@@ -151,6 +194,20 @@ object KVUtils {
     // ==================== Telegram Bot Config ====================
     fun getTelegramBotToken(): String = getString(KEY_TELEGRAM_BOT_TOKEN, "")
     fun setTelegramBotToken(value: String) = putString(KEY_TELEGRAM_BOT_TOKEN, value)
+    private const val KEY_TELEGRAM_BOT_USERNAME = "KEY_TELEGRAM_BOT_USERNAME"
+    private const val KEY_TELEGRAM_CONNECTED = "KEY_TELEGRAM_CONNECTED"
+    private const val KEY_TELEGRAM_LAST_UPDATE_ID = "KEY_TELEGRAM_LAST_UPDATE_ID"
+    fun getTelegramBotUsername(): String = getString(KEY_TELEGRAM_BOT_USERNAME, "")
+    fun setTelegramBotUsername(value: String) = putString(KEY_TELEGRAM_BOT_USERNAME, value)
+    fun getTelegramConnected(): Boolean = getBoolean(KEY_TELEGRAM_CONNECTED, false)
+    fun setTelegramConnected(value: Boolean) = putBoolean(KEY_TELEGRAM_CONNECTED, value)
+    fun getTelegramLastUpdateId(): Long = getLong(KEY_TELEGRAM_LAST_UPDATE_ID, 0L)
+    fun setTelegramLastUpdateId(value: Long) = putLong(KEY_TELEGRAM_LAST_UPDATE_ID, value)
+
+    // ==================== Lobster Active Role ====================
+    private const val KEY_LOBSTER_ACTIVE_ROLE_ID = "lobster_active_role_id"
+    fun getLobsterActiveRoleId(): String = getString(KEY_LOBSTER_ACTIVE_ROLE_ID, "")
+    fun setLobsterActiveRoleId(value: String) = putString(KEY_LOBSTER_ACTIVE_ROLE_ID, value)
 
     // ==================== WeChat iLink Bot Config ====================
     fun getWechatBotToken(): String = getString(KEY_WECHAT_BOT_TOKEN, "")
@@ -368,4 +425,65 @@ object KVUtils {
     /** Returns true if LLM is configured (API key, base URL, or local model path is non-empty) */
     fun hasLlmConfig(): Boolean =
         getLlmApiKey().isNotEmpty() || getLlmBaseUrl().isNotEmpty() || getLocalModelPath().isNotEmpty()
+
+    // R5: Muxi capability badge override label (US-D-025-NATIVE-AUDIO-CAPABILITY-BADGE)
+    private const val KEY_MUXI_CAPABILITY_NATIVE_AUDIO_LABEL =
+        "KEY_MUXI_CAPABILITY_NATIVE_AUDIO_LABEL"
+    fun getMuxiCapabilityNativeAudioLabel(): String =
+        getString(KEY_MUXI_CAPABILITY_NATIVE_AUDIO_LABEL, "")
+    fun setMuxiCapabilityNativeAudioLabel(value: String) =
+        putString(KEY_MUXI_CAPABILITY_NATIVE_AUDIO_LABEL, value)
+
+    // R5: CS-AI credit per 1K tokens (US-D-027-CS-AI-CREDIT-AWARE-TOAST)
+    private const val KEY_CS_AI_CREDIT_PER_1K_TOKENS =
+        "KEY_CS_AI_CREDIT_PER_1K_TOKENS"
+    fun getCsAiCreditPer1kTokens(): Double =
+        getDouble(KEY_CS_AI_CREDIT_PER_1K_TOKENS, 0.0)
+    fun setCsAiCreditPer1kTokens(value: Double) =
+        putDouble(KEY_CS_AI_CREDIT_PER_1K_TOKENS, value)
+
+    // US-D-020-CUSTOM-MODEL-SOURCE: JSON-array of CustomModelSource rows.
+    private const val KEY_CUSTOM_MODEL_SOURCES = "custom_model_sources_v1"
+    fun getCustomModelSources(): String =
+        getString(KEY_CUSTOM_MODEL_SOURCES, "")
+    fun setCustomModelSources(value: String) =
+        putString(KEY_CUSTOM_MODEL_SOURCES, value)
+
+    // ==================== User Global Instructions (US-D-022) ====================
+    private const val KEY_USER_GLOBAL_INSTRUCTIONS = "KEY_USER_GLOBAL_INSTRUCTIONS"
+    fun getUserGlobalInstructions(): String = getString(KEY_USER_GLOBAL_INSTRUCTIONS, "")
+    fun setUserGlobalInstructions(value: String) = putString(KEY_USER_GLOBAL_INSTRUCTIONS, value)
+    fun clearUserGlobalInstructions() = remove(KEY_USER_GLOBAL_INSTRUCTIONS)
+
+    // ==================== User Memory (US-D-018) ====================
+    private const val KEY_USER_MEMORY = "KEY_USER_MEMORY"
+    fun getUserMemory(): String = getString(KEY_USER_MEMORY, "")
+    fun setUserMemory(value: String) = putString(KEY_USER_MEMORY, value)
+    fun clearUserMemory() = remove(KEY_USER_MEMORY)
+
+    // ==================== Monitor Nicknames (US-D-023) ====================
+    private const val KEY_MONITOR_NICKNAMES = "KEY_MONITOR_NICKNAMES"
+    fun getMonitorNicknames(): String = getString(KEY_MONITOR_NICKNAMES, "")
+    fun setMonitorNicknames(value: String) = putString(KEY_MONITOR_NICKNAMES, value)
+
+    // ==================== Missed Call Follow-up (R2 US-B-MISSED-CALL-FOLLOWUP) ====================
+    private const val KEY_MISSED_CALL_FOLLOWUP_ENABLED = "KEY_MISSED_CALL_FOLLOWUP_ENABLED"
+    fun isMissedCallFollowupEnabled(): Boolean = getBoolean(KEY_MISSED_CALL_FOLLOWUP_ENABLED, true)
+    fun setMissedCallFollowupEnabled(value: Boolean) = putBoolean(KEY_MISSED_CALL_FOLLOWUP_ENABLED, value)
+
+    private const val KEY_MISSED_CALL_SMS_TEMPLATE = "KEY_MISSED_CALL_SMS_TEMPLATE"
+    fun getMissedCallSmsTemplate(): String = getString(KEY_MISSED_CALL_SMS_TEMPLATE, "")
+    fun setMissedCallSmsTemplate(value: String) = putString(KEY_MISSED_CALL_SMS_TEMPLATE, value)
+
+    private const val KEY_MISSED_CALL_FOLLOWUP_HISTORY = "KEY_MISSED_CALL_FOLLOWUP_HISTORY"
+    fun getMissedCallFollowupHistory(): String = getString(KEY_MISSED_CALL_FOLLOWUP_HISTORY, "")
+    fun setMissedCallFollowupHistory(value: String) = putString(KEY_MISSED_CALL_FOLLOWUP_HISTORY, value)
+
+    private const val KEY_LAST_RINGING_NUMBER = "KEY_LAST_RINGING_NUMBER"
+    fun getLastRingingNumber(): String = getString(KEY_LAST_RINGING_NUMBER, "")
+    fun setLastRingingNumber(value: String) = putString(KEY_LAST_RINGING_NUMBER, value)
+
+    private const val KEY_LAST_RINGING_AT = "KEY_LAST_RINGING_AT"
+    fun getLastRingingAt(): Long = getLong(KEY_LAST_RINGING_AT, 0L)
+    fun setLastRingingAt(value: Long) = putLong(KEY_LAST_RINGING_AT, value)
 }

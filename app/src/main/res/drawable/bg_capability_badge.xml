@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  US-D-025-NATIVE-AUDIO-CAPABILITY-BADGE
+
+  Rounded-rect background for the small "🎙️ 原生带配音" badge that
+  appears on the right side of a Muxi model list item when the model
+  declares the `native_audio` capability.
+
+  Light-blue surface, small text padding, and 12dp corner radius so the
+  chip reads as a tag rather than a button.
+-->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <solid android:color="@color/capability_badge_bg" />
+    <corners android:radius="12dp" />
+    <padding
+        android:left="8dp"
+        android:right="8dp"
+        android:top="2dp"
+        android:bottom="2dp" />
+    <stroke
+        android:width="0.5dp"
+        android:color="@color/capability_badge_stroke" />
+</shape>

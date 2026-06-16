@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  US-D-028-REMAKE-SCENE-PICKER
+
+  Bottom-sheet host for the 6 remake scene cards. The sheet itself is
+  intentionally minimal — a title strip plus a 2-column grid — so the
+  visual design is owned by item_remake_scene_card.xml.
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:paddingTop="16dp"
+    android:paddingBottom="16dp"
+    android:background="@android:color/white">
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:paddingStart="20dp"
+        android:paddingEnd="20dp"
+        android:paddingBottom="12dp"
+        android:textSize="16sp"
+        android:textStyle="bold"
+        android:text="@string/remake_scene_picker_title" />
+
+    <androidx.recyclerview.widget.RecyclerView
+        android:id="@+id/rv_remake_scenes"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:paddingStart="12dp"
+        android:paddingEnd="12dp"
+        android:clipToPadding="false" />
+</LinearLayout>

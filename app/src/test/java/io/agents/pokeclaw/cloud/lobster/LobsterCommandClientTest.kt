@@ -77,8 +77,9 @@ class LobsterCommandClientTest {
         val client = LobsterCommandClient(api)
         val result = client.submit("open WeChat")
         assertTrue(result is LobsterCommandClient.Result.Ok)
-        assertEquals("exec-1", result.executionId)
-        assertEquals("PENDING", result.status)
+        val ok = result as LobsterCommandClient.Result.Ok
+        assertEquals("exec-1", ok.executionId)
+        assertEquals("PENDING", ok.status)
     }
 
     // ── Test 2: submit returns Rejected on biz code 999 ───────────────────────
@@ -125,7 +126,8 @@ class LobsterCommandClientTest {
         val client = LobsterCommandClient(api)
         val result = client.poll("exec-1")
         assertTrue(result is LobsterCommandClient.Result.Ok)
-        assertEquals("SUCCESS", result.status)
+        val ok = result as LobsterCommandClient.Result.Ok
+        assertEquals("SUCCESS", ok.status)
     }
 
     // ── Test 5: poll returns Ok with FAILED carrying errorMessage ───────────────
@@ -145,8 +147,9 @@ class LobsterCommandClientTest {
         val client = LobsterCommandClient(api)
         val result = client.poll("exec-1")
         assertTrue(result is LobsterCommandClient.Result.Ok)
-        assertEquals("FAILED", result.status)
-        assertEquals("boom", result.detail?.errorMessage)
+        val ok = result as LobsterCommandClient.Result.Ok
+        assertEquals("FAILED", ok.status)
+        assertEquals("boom", ok.detail?.errorMessage)
     }
 
     // ── Test 6: poll returns Ok with TIMEOUT ─────────────────────────────────
@@ -164,7 +167,8 @@ class LobsterCommandClientTest {
         val client = LobsterCommandClient(api)
         val result = client.poll("exec-1")
         assertTrue(result is LobsterCommandClient.Result.Ok)
-        assertEquals("TIMEOUT", result.status)
+        val ok = result as LobsterCommandClient.Result.Ok
+        assertEquals("TIMEOUT", ok.status)
     }
 
     // ── Test 7: poll returns PollTimeout when total elapsed exceeds 5min ───────
@@ -185,7 +189,8 @@ class LobsterCommandClientTest {
         val client = LobsterCommandClient(api, policy, nowProvider)
         val result = client.poll("exec-1")
         assertTrue(result is LobsterCommandClient.Result.PollTimeout)
-        assertEquals("exec-1", result.executionId)
+        val ok = result as LobsterCommandClient.Result.PollTimeout
+        assertEquals("exec-1", ok.executionId)
     }
 
     // ── Test 8: poll returns NotFound on 404 ──────────────────────────────────
@@ -200,7 +205,8 @@ class LobsterCommandClientTest {
         val client = LobsterCommandClient(api)
         val result = client.poll("exec-nonexistent")
         assertTrue(result is LobsterCommandClient.Result.NotFound)
-        assertEquals("exec-nonexistent", result.executionId)
+        val ok = result as LobsterCommandClient.Result.NotFound
+        assertEquals("exec-nonexistent", ok.executionId)
     }
 
     // ── Test 9: submitHermesFeedback returns true on 200 ───────────────────────
@@ -223,11 +229,17 @@ class LobsterCommandClientTest {
     fun `submitHermesFeedback returns true on 202`() = runBlocking {
         val api = FakeLobsterCommandApi().apply {
             enqueueFeedback {
-                val body = CommonResult(code = 0)
-                Response.Builder()
+                // Retrofit's Response.error requires code >= 400, so we use Response.success
+                // with a synthetic raw Response that has code 202. The implementation only
+                // checks resp.code() == 200 || == 202, so the body content is irrelevant.
+                val raw = okhttp3.Response.Builder()
+                    .request(okhttp3.Request.Builder().url("https://example.com/").build())
+                    .protocol(okhttp3.Protocol.HTTP_1_1)
                     .code(202)
-                    .body(ResponseBody.create(null, ""))
+                    .message("Accepted")
+                    .body(okhttp3.ResponseBody.create(null, ""))
                     .build()
+                Response.success(CommonResult(code = 0, data = true), raw)
             }
         }
         val client = LobsterCommandClient(api)
