@@ -54,23 +54,47 @@ android {
         applicationId = "io.agents.pokeclaw"
         minSdk = 28
         targetSdk = 36
-        versionCode = readLocalOrEnvInt("POKECLAW_VERSION_CODE", 27)
-        versionName = readLocalOrEnvString("POKECLAW_VERSION_NAME", "0.6.12")
+        versionCode = readLocalOrEnvInt("POKECLAW_VERSION_CODE", 30)
+        versionName = readLocalOrEnvString("POKECLAW_VERSION_NAME", "0.7.2")
         buildConfigField("String", "VERSION_INFO", getVersionGit())
         buildConfigField("String", "APP_ORIGIN", "\"PokeClaw by agents.io | github.com/agents-io/PokeClaw\"")
         buildConfigField("String", "BUILD_FINGERPRINT", "\"${getBuildFingerprint()}\"")
         buildConfigField("Boolean", "CLOUD_WS_ENABLED", "false")
+        buildConfigField("Boolean", "DEBUG_AUTOMATION_ENABLED", "false")
+        buildConfigField("Boolean", "UPDATE_CHECK_ENABLED", "false")
+        buildConfigField("Boolean", "MISSED_CALL_FOLLOWUP_ENABLED", "true")
+        manifestPlaceholders["debugAutomationEnabled"] = "false"
+        manifestPlaceholders["debugAutomationExported"] = "false"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+    }
+
+    flavorDimensions += "distribution"
+    productFlavors {
+        create("direct") {
+            dimension = "distribution"
+            buildConfigField("Boolean", "MISSED_CALL_FOLLOWUP_ENABLED", "true")
+        }
+        create("play") {
+            dimension = "distribution"
+            buildConfigField("Boolean", "MISSED_CALL_FOLLOWUP_ENABLED", "false")
+        }
     }
 
 
     buildTypes {
         getByName("debug") {
-            isMinifyEnabled = false
+            isDebuggable = false
+            isMinifyEnabled = true
             isShrinkResources = false
+            buildConfigField("Boolean", "DEBUG_AUTOMATION_ENABLED", "true")
+            buildConfigField("Boolean", "UPDATE_CHECK_ENABLED", "false")
+            manifestPlaceholders["debugAutomationEnabled"] = "true"
+            manifestPlaceholders["debugAutomationExported"] = "true"
+            testProguardFiles("proguard-android-test-rules.pro")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
-                "proguard-rules.pro"
+                "proguard-rules.pro",
+                "proguard-debug-rules.pro"
             )
         }
 
@@ -78,6 +102,9 @@ android {
             signingConfig = signingConfigs.getByName("release")
             isMinifyEnabled = true
             isShrinkResources = true
+            buildConfigField("Boolean", "UPDATE_CHECK_ENABLED", "true")
+            manifestPlaceholders["debugAutomationEnabled"] = "false"
+            manifestPlaceholders["debugAutomationExported"] = "false"
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
@@ -185,6 +212,7 @@ dependencies {
     // org.json is provided by Android at runtime, but unit tests run on the JVM
     // without it. Pull in the reference implementation so parser tests work.
     testImplementation("org.json:json:20240303")
+    androidTestImplementation(kotlin("stdlib"))
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
 }
@@ -213,7 +241,8 @@ androidComponents {
         variant.outputs.forEach { output ->
             if (output is com.android.build.api.variant.impl.VariantOutputImpl) {
                 val versionName = android.defaultConfig.versionName ?: "0.0.0"
-                val fileName = "PokeClaw_v${versionName}_${getDateTime()}.apk"
+                val flavorName = variant.flavorName?.takeIf { it.isNotBlank() } ?: "default"
+                val fileName = "PokeClaw_${flavorName}_v${versionName}_${getDateTime()}.apk"
                 println("output file name: $fileName")
                 output.outputFileName.set(fileName)
             }

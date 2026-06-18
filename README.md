@@ -420,6 +420,11 @@ Every star helps more people find the project. Every issue helps shape the next 
 
 ## Changelog
 
+### v0.7.2 (2026-06-17)
+- **Missed-call follow-up is explicit opt-in.** The SMS follow-up setting now defaults off, the phone-state receiver is not exported, and Settings returns to the confirmation dialog after permission grants instead of enabling auto-SMS silently.
+- **QA/debug builds no longer show public release update prompts.** Update checks are now build-type gated with `UPDATE_CHECK_ENABLED`, so local QA builds do not interrupt startup by pointing testers at the latest public APK.
+- **Release and automation smoke coverage is stronger.** The release variant now has current smoke evidence for minify/shrink/package/sign, cold startup, debug automation being disabled, and user-enabled External Automation running a direct battery task.
+
 ### v0.6.12 (2026-04-30)
 - **Hotfix for Android background activity launch limits.** External automation now has an exported activity entrypoint for MacroDroid, Tasker, and Locale-style apps, avoiding Android 16 / targetSdk 36 background launch blocking when a broadcast receiver tries to open the chatroom.
 - **MacroDroid setup now uses Activity target.** The verified setup launches `io.agents.pokeclaw.automation.ExternalAutomationActivity` with `RUN_TASK` / `RUN_CHAT` and the same `task` / `chat` extras.

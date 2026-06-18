@@ -145,6 +145,21 @@ public class ClawNotificationListener extends NotificationListenerService {
         return false;
     }
 
+    public static boolean ensureConnected(Context context, long timeoutMs) {
+        if (instance != null) return true;
+        if (!isEnabledInSettings(context)) return false;
+
+        try {
+            ComponentName component = new ComponentName(context, ClawNotificationListener.class);
+            requestRebind(component);
+            XLog.i(TAG, "Requested notification listener rebind");
+        } catch (Exception e) {
+            XLog.w(TAG, "Failed to request notification listener rebind", e);
+        }
+
+        return awaitConnected(timeoutMs);
+    }
+
     /**
      * Get all active notifications. Used by GetNotificationsTool.
      * Returns null if listener is not connected.

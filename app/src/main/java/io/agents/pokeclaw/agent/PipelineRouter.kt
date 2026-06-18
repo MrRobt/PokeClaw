@@ -45,6 +45,15 @@ class PipelineRouter(private val context: Context) {
      * @return the routing decision
      */
     fun route(task: String): Route {
+        DirectDeviceDataGuard.deterministicToolCall(task)?.let { directTool ->
+            XLog.i(TAG, "Tier 1 direct device-data match: ${directTool.toolName} params=${directTool.params}")
+            return Route.DirectTool(
+                directTool.toolName,
+                directTool.params,
+                directDeviceDataDescription(directTool)
+            )
+        }
+
         // Compound tasks (containing "and", "then", "after") should go to agent loop,
         // not be partially handled by Tier 1 deterministic matching.
         val lower = task.lowercase()
@@ -124,6 +133,23 @@ class PipelineRouter(private val context: Context) {
             }
         }
         return emptyMap()
+    }
+
+    private fun directDeviceDataDescription(directTool: DirectDeviceDataGuard.DeterministicToolCall): String {
+        return when (directTool.toolName) {
+            "clipboard" -> "Clipboard contents"
+            "get_notifications" -> "Notification summary"
+            "get_installed_apps" -> "Installed apps"
+            "get_device_info" -> when (directTool.params["category"]) {
+                "battery" -> "Battery status"
+                "wifi" -> "WiFi status"
+                "bluetooth" -> "Bluetooth status"
+                "storage" -> "Storage status"
+                "device" -> "Device info"
+                else -> "Device info"
+            }
+            else -> "Direct device data"
+        }
     }
 
     companion object {

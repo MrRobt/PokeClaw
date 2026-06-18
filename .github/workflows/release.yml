@@ -24,6 +24,9 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
+      - name: Release script self-test
+        run: python scripts/release_scripts_selftest.py
+
       - name: Cache Gradle packages
         uses: actions/cache@v4
         with:
@@ -62,11 +65,44 @@ jobs:
           KEY_PASSWORD=$ANDROID_KEY_PASSWORD
           EOF
 
-      - name: Build signed release APK
-        run: ./gradlew assembleRelease
+      - name: Release gate preflight
+        env:
+          VERSION: ${{ github.ref_name }}
+        run: |
+          python scripts/release_gate_check.py --require-signing --expected-version "${VERSION#v}" --play-store
 
-      - name: Generate release checksums
-        run: sha256sum app/build/outputs/apk/release/*.apk > app/build/outputs/apk/release/SHA256SUMS.txt
+      - name: Build signed release artifacts
+        run: ./gradlew assembleDirectRelease bundlePlayRelease
+
+      - name: Verify release APK artifact
+        env:
+          VERSION: ${{ github.ref_name }}
+        run: |
+          python scripts/verify_release_artifact.py \
+            --apk "$(ls app/build/outputs/apk/direct/release/*.apk | head -n 1)" \
+            --expected-version "${VERSION#v}" \
+            --distribution direct \
+            --expected-signer-cert-sha256 e000d1d6555b8fab20c03a5d9ddeba83944f26eecf0b978ac7affc2eebd43186 \
+            --write-sha256 app/build/outputs/apk/direct/release/SHA256SUMS.txt
+
+      - name: Verify Play AAB artifact
+        env:
+          VERSION: ${{ github.ref_name }}
+        run: |
+          python scripts/verify_release_artifact.py \
+            --aab "$(ls app/build/outputs/bundle/playRelease/*.aab | head -n 1)" \
+            --expected-version "${VERSION#v}" \
+            --distribution play \
+            --expected-signer-cert-sha256 e000d1d6555b8fab20c03a5d9ddeba83944f26eecf0b978ac7affc2eebd43186 \
+            --write-sha256 app/build/outputs/bundle/playRelease/SHA256SUMS.txt
+
+      - name: Upload Play AAB artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: play-release-aab
+          path: |
+            app/build/outputs/bundle/playRelease/*.aab
+            app/build/outputs/bundle/playRelease/SHA256SUMS.txt
 
       - name: Extract release notes from README
         env:
@@ -99,8 +135,8 @@ jobs:
           tag_name: ${{ github.ref_name }}
           name: ${{ github.ref_name }}
           files: |
-            app/build/outputs/apk/release/*.apk
-            app/build/outputs/apk/release/SHA256SUMS.txt
+            app/build/outputs/apk/direct/release/*.apk
+            app/build/outputs/apk/direct/release/SHA256SUMS.txt
           body_path: release-notes.md
           draft: false
           prerelease: false

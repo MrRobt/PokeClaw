@@ -75,7 +75,7 @@ public class ClipboardTool extends BaseTool {
             intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
             context.startActivity(intent);
 
-            boolean completed = ClipboardReaderActivity.latch.await(3, TimeUnit.SECONDS);
+            boolean completed = ClipboardReaderActivity.latch.await(10, TimeUnit.SECONDS);
             if (!completed) {
                 return ToolResult.error("Clipboard read timed out");
             }

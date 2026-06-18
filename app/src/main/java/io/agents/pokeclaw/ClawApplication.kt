@@ -3,15 +3,20 @@
 
 package io.agents.pokeclaw
 
+import android.content.IntentFilter
+import android.telephony.TelephonyManager
+import androidx.core.content.ContextCompat
 import com.blankj.utilcode.util.NetworkUtils
 import io.agents.pokeclaw.agent.DefaultAgentService
 import io.agents.pokeclaw.agent.llm.LocalBackendHealth
 import io.agents.pokeclaw.base.BaseApp
 import io.agents.pokeclaw.channel.ChannelManager
+import io.agents.pokeclaw.cloud.AndroidDeviceInfoProvider
 import io.agents.pokeclaw.cloud.CloudNodeOrchestrator
 import io.agents.pokeclaw.cloud.LocalAgentTaskExecutor
 import io.agents.pokeclaw.cloud.RetrofitDeviceCloudClient
 import io.agents.pokeclaw.cloud.auth.AndroidKeystoreCloudDeviceTokenStore
+import io.agents.pokeclaw.receiver.MissedCallReceiver
 import io.agents.pokeclaw.tool.ToolRegistry
 import io.agents.pokeclaw.utils.AppLogStore
 import io.agents.pokeclaw.utils.KVUtils
@@ -32,8 +37,18 @@ class ClawApplication : BaseApp() {
         lateinit var instance: ClawApplication
             private set
 
-        lateinit var appViewModelInstance: AppViewModel
-            private set
+        private val appViewModelLock = Any()
+        private var appViewModelBacking: AppViewModel? = null
+
+        val appViewModelInstance: AppViewModel
+            get() {
+                check(::instance.isInitialized) { "ClawApplication is not initialized" }
+                return synchronized(appViewModelLock) {
+                    appViewModelBacking
+                        ?: instance.getAppViewModelProvider()[AppViewModel::class.java]
+                            .also { appViewModelBacking = it }
+                }
+            }
 
         private val runtimeBootstrapStarted = AtomicBoolean(false)
         private val runtimeBootstrapReady = CountDownLatch(1)
@@ -54,6 +69,7 @@ class ClawApplication : BaseApp() {
     }
 
     private var networkListener: NetworkUtils.OnNetworkStatusChangedListener? = null
+    private val missedCallReceiver = MissedCallReceiver()
 
     override fun onCreate() {
         super.onCreate()
@@ -68,23 +84,36 @@ class ClawApplication : BaseApp() {
         instance = this
         logStartupStep("instance")
         AppLogStore.init(this)
-        XLog.setDEBUG(BuildConfig.DEBUG)
+        XLog.setDEBUG(BuildConfig.DEBUG || BuildConfig.DEBUG_AUTOMATION_ENABLED)
         logStartupStep("logging")
         KVUtils.init(this)
         logStartupStep("kv")
-        appViewModelInstance = getAppViewModelProvider()[AppViewModel::class.java]
-        logStartupStep("viewmodel")
+        if (BuildConfig.MISSED_CALL_FOLLOWUP_ENABLED) {
+            registerMissedCallReceiver()
+            logStartupStep("missed-call-receiver")
+        } else {
+            logStartupStep("missed-call-disabled")
+        }
+        logStartupStep("viewmodel-deferred")
 
-        DefaultAgentService.FILE_LOGGING_ENABLED = BuildConfig.DEBUG
-        DefaultAgentService.FILE_LOGGING_CACHE_DIR = cacheDir
-
-        appViewModelInstance.initCommon()
-        logStartupStep("common")
-        io.agents.pokeclaw.agent.skill.SkillRegistry.registerBuiltInSkillDefinitions()
-        logStartupStep("skills")
+        logStartupStep("common-deferred")
         XLog.i(TAG, "ClawApplication core initialized")
         startRuntimeBootstrap()
         logStartupStep("runtime-started")
+    }
+
+    private fun registerMissedCallReceiver() {
+        try {
+            ContextCompat.registerReceiver(
+                this,
+                missedCallReceiver,
+                IntentFilter(TelephonyManager.ACTION_PHONE_STATE_CHANGED),
+                ContextCompat.RECEIVER_EXPORTED
+            )
+            XLog.i(TAG, "Missed-call dynamic receiver registered")
+        } catch (e: Exception) {
+            XLog.w(TAG, "Failed to register missed-call dynamic receiver", e)
+        }
     }
 
     private fun startRuntimeBootstrap() {
@@ -92,8 +121,11 @@ class ClawApplication : BaseApp() {
         Thread({
             try {
                 android.util.Log.i("POKECLAW_INIT", "app-runtime-bootstrap thread STARTED")
+                DefaultAgentService.FILE_LOGGING_ENABLED = BuildConfig.DEBUG || BuildConfig.DEBUG_AUTOMATION_ENABLED
+                DefaultAgentService.FILE_LOGGING_CACHE_DIR = cacheDir
                 LocalBackendHealth.recoverPendingGpuCrashIfNeeded()
                 ToolRegistry.getInstance().registerAllTools(ToolRegistry.DeviceType.MOBILE)
+                io.agents.pokeclaw.agent.skill.SkillRegistry.registerBuiltInSkillDefinitions()
                 io.agents.pokeclaw.agent.skill.SkillRegistry.loadRuntimeStats()
                 io.agents.pokeclaw.agent.PlaybookManager.loadAll(this)
                 XLog.i(
@@ -164,6 +196,8 @@ class ClawApplication : BaseApp() {
             offlineQueue = offlineQueue,
             hmacTimeOffsetProvider = { heartbeatManager.getHmacTimeOffsetMillis() },
         )
+        val deviceId = AndroidDeviceInfoProvider(this).loadOrGenerateDeviceId()
+        heartbeatManager.initialize(cloudClient, deviceId)
         val taskExecutor = LocalAgentTaskExecutor()
 
         cloudOrchestrator = CloudNodeOrchestrator(
@@ -177,8 +211,11 @@ class ClawApplication : BaseApp() {
         XLog.i(TAG, "initCloudNode: cloud node initialized, enabled=$enabled, baseUrl=$baseUrl")
 
         if (enabled) {
+            heartbeatManager.startHeartbeat()
             cloudOrchestrator.start()
-            XLog.i(TAG, "initCloudNode: cloud node started")
+            XLog.i(TAG, "initCloudNode: cloud node started, work heartbeat scheduled")
+        } else {
+            heartbeatManager.stopHeartbeat()
         }
     }
 }

@@ -9,6 +9,7 @@ import android.content.Intent
 import android.util.Base64
 import io.agents.pokeclaw.agent.llm.LocalBackendHealth
 import io.agents.pokeclaw.agent.llm.ModelConfigRepository
+import io.agents.pokeclaw.cloud.CloudHeartbeatManager
 import io.agents.pokeclaw.service.AutoReplyManager
 import io.agents.pokeclaw.support.DebugReportManager
 import io.agents.pokeclaw.tool.ToolRegistry
@@ -36,20 +37,27 @@ import org.json.JSONObject
  */
 class DebugTaskReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
-        if (!io.agents.pokeclaw.BuildConfig.DEBUG) return
+        if (!io.agents.pokeclaw.BuildConfig.DEBUG_AUTOMATION_ENABLED) return
         val directTool = intent.getStringExtra("tool")?.trim().orEmpty()
         val paramsJson = firstNonBlank(
             decodeBase64Extra(intent, "params_b64"),
             intent.getStringExtra("params_json")?.trim()
         ).orEmpty()
+        val cloudAction = intent.getStringExtra("cloud_action")?.trim().orEmpty()
         val backendAction = intent.getStringExtra("backend_action")?.trim().orEmpty()
         val supportAction = intent.getStringExtra("support_action")?.trim().orEmpty()
         val simulateMessage = intent.getStringExtra("simulate_message")?.trim().orEmpty()
         val task = intent.getStringExtra("task") ?: "open my camera"
         breadcrumb(
             context,
-            "received tool=$directTool backend_action=$backendAction support_action=$supportAction simulate_contact=${intent.getStringExtra("simulate_contact").orEmpty()} simulate_message=$simulateMessage task=$task"
+            "received tool=$directTool cloud_action=$cloudAction backend_action=$backendAction support_action=$supportAction simulate_contact=${intent.getStringExtra("simulate_contact").orEmpty()} simulate_message=$simulateMessage task=$task"
         )
+        if (cloudAction.isNotEmpty()) {
+            runAsync("debug-cloud-$cloudAction") {
+                handleCloudDebug(context, intent, cloudAction)
+            }
+            return
+        }
         if (backendAction.isNotEmpty()) {
             handleLocalBackendDebug(intent, backendAction)
             return
@@ -214,6 +222,51 @@ class DebugTaskReceiver : BroadcastReceiver() {
             )
         } catch (e: Exception) {
             XLog.e("DebugTaskReceiver", "Failed to simulate incoming message", e)
+        }
+    }
+
+    private fun handleCloudDebug(context: Context, intent: Intent, action: String) {
+        try {
+            val baseUrl = intent.getStringExtra("cloud_base_url")?.trim().orEmpty()
+            if (baseUrl.isNotEmpty()) {
+                KVUtils.putString("cloud_base_url", baseUrl)
+            }
+            when (action.lowercase()) {
+                "enable", "start" -> {
+                    KVUtils.putBoolean("cloud_enabled", true)
+                    KVUtils.sync()
+                    io.agents.pokeclaw.ClawApplication.awaitRuntimeBootstrapReady()
+                    CloudHeartbeatManager.getInstance(context).startHeartbeat()
+                    runCatching { io.agents.pokeclaw.ClawApplication.cloudOrchestrator.start() }
+                    XLog.i("DebugTaskReceiver", "Cloud node debug enabled; WorkManager heartbeat requested")
+                    breadcrumb(context, "cloud enable base_url=$baseUrl")
+                }
+                "disable", "stop" -> {
+                    KVUtils.putBoolean("cloud_enabled", false)
+                    KVUtils.sync()
+                    io.agents.pokeclaw.ClawApplication.awaitRuntimeBootstrapReady()
+                    CloudHeartbeatManager.getInstance(context).stopHeartbeat()
+                    runCatching { io.agents.pokeclaw.ClawApplication.cloudOrchestrator.stop() }
+                    XLog.i("DebugTaskReceiver", "Cloud node debug disabled; WorkManager heartbeat cancelled")
+                    breadcrumb(context, "cloud disable")
+                }
+                "status" -> {
+                    val enabled = KVUtils.getBoolean("cloud_enabled", false)
+                    val manager = CloudHeartbeatManager.getInstance(context)
+                    XLog.i(
+                        "DebugTaskReceiver",
+                        "Cloud node debug status: enabled=$enabled, workHeartbeatOnline=${manager.isOnline()}"
+                    )
+                    breadcrumb(context, "cloud status enabled=$enabled work_online=${manager.isOnline()}")
+                }
+                else -> {
+                    XLog.w("DebugTaskReceiver", "Unknown cloud_action=$action")
+                    breadcrumb(context, "cloud unknown action=$action")
+                }
+            }
+        } catch (e: Exception) {
+            XLog.e("DebugTaskReceiver", "Failed cloud_action=$action", e)
+            breadcrumb(context, "cloud exception action=$action error=${e.message}")
         }
     }
 

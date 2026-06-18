@@ -70,6 +70,7 @@ object DebugReportManager {
             appendLine("App")
             appendLine("- Version: ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})")
             appendLine("- Debug build: ${BuildConfig.DEBUG}")
+            appendLine("- Debug automation: ${BuildConfig.DEBUG_AUTOMATION_ENABLED}")
             appendLine("- Package: ${BuildConfig.APPLICATION_ID}")
             appendLine()
             appendLine("Device")

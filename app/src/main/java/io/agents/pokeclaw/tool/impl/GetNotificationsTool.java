@@ -52,7 +52,7 @@ public class GetNotificationsTool extends BaseTool {
 
     @Override
     public ToolResult execute(Map<String, Object> params) {
-        if (!ClawNotificationListener.isConnected()) {
+        if (!ClawNotificationListener.ensureConnected(ClawApplication.Companion.getInstance(), 5_000L)) {
             return ToolResult.error("Notification Access is not enabled. Ask the user to enable it in Settings.");
         }
 

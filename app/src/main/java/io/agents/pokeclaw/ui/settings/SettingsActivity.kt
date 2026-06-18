@@ -18,6 +18,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
+import io.agents.pokeclaw.BuildConfig
 import io.agents.pokeclaw.R
 import io.agents.pokeclaw.base.BaseActivity
 import io.agents.pokeclaw.widget.AlertDialog
@@ -44,6 +45,8 @@ class SettingsActivity : BaseActivity() {
 
     companion object {
         private const val TAG = "SettingsActivity"
+        private const val REQUEST_POST_NOTIFICATIONS = 100
+        private const val REQUEST_MISSED_CALL_PERMISSIONS = 101
     }
 
     // Poll permissions every second (same as original HomeActivity)
@@ -111,6 +114,7 @@ class SettingsActivity : BaseActivity() {
         refreshSettings()
         refreshPermissions()
         refreshExternalAutomation()
+        refreshMissedCallItem()
         handler.removeCallbacks(permPoller)
         handler.postDelayed(permPoller, 1000)
     }
@@ -191,8 +195,108 @@ class SettingsActivity : BaseActivity() {
                 KVUtils.setExternalAutomationEnabled(true)
                 refreshExternalAutomation()
                 Toast.makeText(this, "External Automation enabled", Toast.LENGTH_SHORT).show()
+                requestTaskNotificationPermissionIfNeeded()
             }
         )
+    }
+
+    private fun requestTaskNotificationPermissionIfNeeded() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            !AppCapabilityCoordinator.isNotificationPermissionGranted(this)
+        ) {
+            requestPermissions(
+                arrayOf(Manifest.permission.POST_NOTIFICATIONS),
+                REQUEST_POST_NOTIFICATIONS
+            )
+        }
+    }
+
+    private fun refreshMissedCallItem(item: io.agents.pokeclaw.widget.MenuItem? = null) {
+        val target = item ?: menuItems["MISSED_CALL_FOLLOWUP"]
+        target?.setTrailingText(
+            if (KVUtils.isMissedCallFollowupEnabled()) "Enabled" else "Disabled"
+        )
+    }
+
+    private fun toggleMissedCallFollowup() {
+        if (KVUtils.isMissedCallFollowupEnabled()) {
+            KVUtils.setMissedCallFollowupEnabled(false)
+            refreshMissedCallItem()
+            Toast.makeText(this, "Missed Call Follow-up disabled", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        // Check permissions before enabling. READ_CALL_LOG is required for
+        // TelephonyManager.EXTRA_INCOMING_NUMBER on modern Android.
+        val hasPhoneState = checkSelfPermission(Manifest.permission.READ_PHONE_STATE) == android.content.pm.PackageManager.PERMISSION_GRANTED
+        val hasCallLog = checkSelfPermission(Manifest.permission.READ_CALL_LOG) == android.content.pm.PackageManager.PERMISSION_GRANTED
+        val hasSms = checkSelfPermission(Manifest.permission.SEND_SMS) == android.content.pm.PackageManager.PERMISSION_GRANTED
+
+        if (!hasPhoneState || !hasCallLog || !hasSms) {
+            requestPermissions(
+                arrayOf(
+                    Manifest.permission.READ_PHONE_STATE,
+                    Manifest.permission.READ_CALL_LOG,
+                    Manifest.permission.SEND_SMS,
+                ),
+                REQUEST_MISSED_CALL_PERMISSIONS
+            )
+            return
+        }
+
+        ConfirmDialog.showWarm(
+            context = this,
+            title = "Enable Missed Call Follow-up?",
+            message = "When you miss a call (< 5 seconds), PokeClaw will automatically send an SMS follow-up after 5 seconds. You can customize the message template after enabling.",
+            actionTitle = "Enable",
+            cancelTitle = getString(R.string.common_cancel),
+            onAction = {
+                KVUtils.setMissedCallFollowupEnabled(true)
+                refreshMissedCallItem()
+                Toast.makeText(this, "Missed Call Follow-up enabled", Toast.LENGTH_SHORT).show()
+                showMissedCallTemplateDialog()
+            }
+        )
+    }
+
+    private fun showMissedCallTemplateDialog() {
+        val currentTemplate = KVUtils.getMissedCallSmsTemplate()
+            .ifBlank { "Sorry I missed your call — I'll get back to you shortly." }
+        io.agents.pokeclaw.widget.InputDialog.show(
+            context = this,
+            title = "SMS Template",
+            hint = "Customize the auto-reply message sent for missed calls...",
+            presetText = currentTemplate,
+            confirmText = "Save",
+            onComplete = { text ->
+                KVUtils.setMissedCallSmsTemplate(text)
+                Toast.makeText(this, "Template saved", Toast.LENGTH_SHORT).show()
+            }
+        )
+    }
+
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        when (requestCode) {
+            REQUEST_POST_NOTIFICATIONS -> {
+                refreshPermissions()
+                val granted = grantResults.any { it == android.content.pm.PackageManager.PERMISSION_GRANTED }
+                if (granted) {
+                    Toast.makeText(this, "Task notifications enabled", Toast.LENGTH_SHORT).show()
+                } else {
+                    Toast.makeText(this, "External tasks can run, but task notifications remain disabled", Toast.LENGTH_LONG).show()
+                }
+            }
+            REQUEST_MISSED_CALL_PERMISSIONS -> {
+                val allGranted = grantResults.isNotEmpty() &&
+                    grantResults.all { it == android.content.pm.PackageManager.PERMISSION_GRANTED }
+                if (allGranted) {
+                    toggleMissedCallFollowup()
+                } else {
+                    Toast.makeText(this, "Permissions required for missed call follow-up", Toast.LENGTH_LONG).show()
+                }
+            }
+        }
     }
 
     private fun initMenuGroups() {
@@ -216,7 +320,10 @@ class SettingsActivity : BaseActivity() {
             onClick = {
                 if (!AppCapabilityCoordinator.isNotificationPermissionGranted(this@SettingsActivity)) {
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                        requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 100)
+                        requestPermissions(
+                            arrayOf(Manifest.permission.POST_NOTIFICATIONS),
+                            REQUEST_POST_NOTIFICATIONS
+                        )
                     }
                 } else {
                     Toast.makeText(this@SettingsActivity, R.string.home_notification_enabled, Toast.LENGTH_SHORT).show()
@@ -356,9 +463,23 @@ class SettingsActivity : BaseActivity() {
             onClick = {
                 Toast.makeText(this, "12 tools enabled. Tool management coming soon.", Toast.LENGTH_SHORT).show()
             },
-            showDivider = false
+            showDivider = true
         ).apply {
             setTrailingText("12 enabled")
+        }
+
+        if (BuildConfig.MISSED_CALL_FOLLOWUP_ENABLED) {
+            // Missed Call Follow-up (R2 US-B-MISSED-CALL-FOLLOWUP)
+            val missedCallItem = toolsGroup.addMenuItem(
+                leadingIcon = android.R.drawable.ic_menu_call,
+                title = "Missed Call Follow-up",
+                onClick = { toggleMissedCallFollowup() },
+                showDivider = false
+            )
+            menuItems["MISSED_CALL_FOLLOWUP"] = missedCallItem
+            refreshMissedCallItem(missedCallItem)
+        } else {
+            KVUtils.setMissedCallFollowupEnabled(false)
         }
 
         // Remote Control

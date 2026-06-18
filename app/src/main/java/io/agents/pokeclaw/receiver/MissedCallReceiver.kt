@@ -20,7 +20,7 @@ import io.agents.pokeclaw.utils.XLog
  *  - Reads EXTRA_STATE=IDLE
  *  - Captures incomingNumber
  *  - Computes duration: now - ringingAtMillis; only fires if < 5_000ms
- *  - Requires [KVUtils.isMissedCallFollowupEnabled] (default ON)
+ *  - Requires [KVUtils.isMissedCallFollowupEnabled] (default OFF)
  *  - Schedules [MissedCallFollowupJob] 5s later (gives the user a chance to
  *    pick up a second incoming call before sending the SMS)
  *  - Does NOT depend on accessibility or WhatsApp automation

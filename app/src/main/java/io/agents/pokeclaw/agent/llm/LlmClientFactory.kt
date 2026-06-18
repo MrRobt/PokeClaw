@@ -12,7 +12,7 @@ import io.agents.pokeclaw.agent.langchain.http.OkHttpClientBuilderAdapter
 object LlmClientFactory {
 
     fun create(config: AgentConfig): LlmClient {
-        if (BuildConfig.DEBUG && config.baseUrl.startsWith(MockLlmClient.BASE_URL_PREFIX)) {
+        if (BuildConfig.DEBUG_AUTOMATION_ENABLED && config.baseUrl.startsWith(MockLlmClient.BASE_URL_PREFIX)) {
             return MockLlmClient()
         }
 

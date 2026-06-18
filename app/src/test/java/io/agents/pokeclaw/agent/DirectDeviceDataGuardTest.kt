@@ -1,5 +1,6 @@
 package io.agents.pokeclaw.agent
 
+import android.content.ContextWrapper
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -224,6 +225,36 @@ class DirectDeviceDataGuardTest {
         assertNotNull(call)
         assertEquals("get_device_info", call!!.toolName)
         assertEquals("battery", call.params["category"])
+    }
+
+    @Test
+    fun `pipeline router routes battery data request to direct device info tool`() {
+        val route = PipelineRouter(ContextWrapper(null)).route("how much battery left")
+
+        assertTrue(route is PipelineRouter.Route.DirectTool)
+        val directTool = route as PipelineRouter.Route.DirectTool
+        assertEquals("get_device_info", directTool.toolName)
+        assertEquals("battery", directTool.params["category"])
+    }
+
+    @Test
+    fun `pipeline router routes compound clipboard data request before generic compound fallback`() {
+        val route = PipelineRouter(ContextWrapper(null)).route("read my clipboard and explain what it says")
+
+        assertTrue(route is PipelineRouter.Route.DirectTool)
+        val directTool = route as PipelineRouter.Route.DirectTool
+        assertEquals("clipboard", directTool.toolName)
+        assertEquals("get", directTool.params["action"])
+    }
+
+    @Test
+    fun `pipeline router routes compound notification summary request before generic compound fallback`() {
+        val route = PipelineRouter(ContextWrapper(null)).route("read my notifications and summarize")
+
+        assertTrue(route is PipelineRouter.Route.DirectTool)
+        val directTool = route as PipelineRouter.Route.DirectTool
+        assertEquals("get_notifications", directTool.toolName)
+        assertTrue(directTool.params.isEmpty())
     }
 
     @Test

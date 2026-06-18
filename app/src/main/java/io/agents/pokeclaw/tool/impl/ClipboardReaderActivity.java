@@ -8,6 +8,8 @@ import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Context;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 
 import java.util.concurrent.CountDownLatch;
 
@@ -36,16 +38,27 @@ public class ClipboardReaderActivity extends Activity {
     }
 
     @Override
+    protected void onResume() {
+        super.onResume();
+        new Handler(Looper.getMainLooper()).postDelayed(this::completeRead, 1200);
+    }
+
+    @Override
     public void onWindowFocusChanged(boolean hasFocus) {
         super.onWindowFocusChanged(hasFocus);
         if (hasFocus && !hasRead) {
-            hasRead = true;
-            readClipboard();
-            if (latch != null) {
-                latch.countDown();
-            }
-            finish();
+            completeRead();
         }
+    }
+
+    private void completeRead() {
+        if (hasRead) return;
+        hasRead = true;
+        readClipboard();
+        if (latch != null) {
+            latch.countDown();
+        }
+        finish();
     }
 
     private void readClipboard() {

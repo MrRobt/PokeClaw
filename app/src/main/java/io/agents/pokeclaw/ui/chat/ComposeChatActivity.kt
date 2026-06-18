@@ -26,6 +26,7 @@ import io.agents.pokeclaw.automation.ExternalAutomationContract
 import io.agents.pokeclaw.automation.ExternalAutomationEntrypoint
 import io.agents.pokeclaw.appViewModel
 import io.agents.pokeclaw.floating.FloatingCircleManager
+import io.agents.pokeclaw.job.MissedCallFollowupStore
 import io.agents.pokeclaw.ui.settings.LlmConfigActivity
 import io.agents.pokeclaw.ui.settings.SettingsActivity
 import io.agents.pokeclaw.utils.KVUtils
@@ -318,6 +319,47 @@ class ComposeChatActivity : ComponentActivity() {
                 visibleMessages = _messages.toList(),
             )
         }
+        checkAndShowMissedCallFollowup()
+    }
+
+    /**
+     * Check for recent missed call follow-ups and show status in chat.
+     * R2 US-B-MISSED-CALL-FOLLOWUP: Surface follow-up status in chatroom.
+     */
+    private fun checkAndShowMissedCallFollowup() {
+        val recentEntries = MissedCallFollowupStore.recent(this, limit = 3)
+        if (recentEntries.isEmpty()) return
+
+        // Only show entries from the last 5 minutes to avoid spam on app restart
+        val cutoffTime = System.currentTimeMillis() - 5 * 60 * 1000
+        val recent = recentEntries.filter { it.sentAt > cutoffTime }
+        if (recent.isEmpty()) return
+
+        // Check if we already showed these entries in this session
+        val shownKey = "missed_call_shown_${conversationStore.currentConversationId}"
+        val lastShownAt = KVUtils.getLong(shownKey, 0L)
+        val newestEntryTime = recent.maxOf { it.sentAt }
+        if (lastShownAt >= newestEntryTime) return
+
+        // Build and show status message
+        val statusText = recent.joinToString("\n") { entry ->
+            val timeStr = java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault())
+                .format(java.util.Date(entry.sentAt))
+            when (entry.status) {
+                MissedCallFollowupStore.Entry.Status.SENT ->
+                    "[$timeStr] Missed call follow-up sent to ${entry.phone}"
+                MissedCallFollowupStore.Entry.Status.FAILED ->
+                    "[$timeStr] Missed call follow-up failed for ${entry.phone}: ${entry.error}"
+            }
+        }
+
+        _messages.add(ChatMessage(
+            ChatMessage.Role.SYSTEM,
+            "**Missed Call Follow-up**\n$statusText"
+        ))
+
+        // Mark as shown
+        KVUtils.putLong(shownKey, newestEntryTime)
     }
 
     override fun onPause() {

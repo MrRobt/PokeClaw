@@ -174,11 +174,12 @@ class TaskOrchestrator(
                             ChannelManager.sendMessage(channel, "✗ ${route.description}: $error", messageID)
                             "Failed: ${route.description}: $error"
                         } else {
+                            val directAnswer = toolResult.data?.takeIf { it.isNotBlank() } ?: route.description
                             success = true
-                            learningManager.recordSuccess(messageID, task, route.description)
-                            taskEventCallback?.invoke(TaskEvent.Completed(route.description))
-                            ChannelManager.sendMessage(channel, "✓ ${route.description}", messageID)
-                            route.description
+                            learningManager.recordSuccess(messageID, task, directAnswer)
+                            taskEventCallback?.invoke(TaskEvent.Completed(directAnswer))
+                            ChannelManager.sendMessage(channel, "✓ $directAnswer", messageID)
+                            directAnswer
                         }
                     } catch (e: Exception) {
                         val message = e.message ?: "Unknown error"

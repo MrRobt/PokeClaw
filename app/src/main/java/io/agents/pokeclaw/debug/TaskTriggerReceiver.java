@@ -28,7 +28,7 @@ public class TaskTriggerReceiver extends BroadcastReceiver {
 
     @Override
     public void onReceive(Context context, Intent intent) {
-        if (!io.agents.pokeclaw.BuildConfig.DEBUG) return;
+        if (!io.agents.pokeclaw.BuildConfig.DEBUG_AUTOMATION_ENABLED) return;
         if (intent == null || !ACTION.equals(intent.getAction())) return;
         String task = firstNonBlank(
                 decodeBase64Extra(intent, "task_b64"),

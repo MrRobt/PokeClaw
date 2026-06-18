@@ -1,0 +1,42 @@
+# PokeClaw 本地配置模板
+# 复制此文件为 local.properties 并填入实际值
+# ⚠️ 不要将 local.properties 提交到版本控制！
+
+# =============================================================================
+# 发布签名配置 (必填用于Release构建)
+# =============================================================================
+# 根据 RELEASING.md 生成你的发布密钥库:
+# keytool -genkey -v -keystore pokeclaw-release.keystore -alias pokeclaw-release -keyalg RSA -keysize 2048 -validity 10000
+
+# 密钥库文件的绝对路径
+KEYSTORE_FILE=/absolute/path/to/pokeclaw-release.keystore
+
+# 密钥库密码
+KEYSTORE_PASSWORD=your_keystore_password
+
+# 密钥别名
+KEY_ALIAS=pokeclaw-release
+
+# 密钥密码
+KEY_PASSWORD=your_key_password
+
+# =============================================================================
+# 版本号配置 (可选，用于本地测试不同版本)
+# =============================================================================
+# POKECLAW_VERSION_CODE=27
+# POKECLAW_VERSION_NAME=0.6.12
+
+# =============================================================================
+# 云后端配置 (可选，用于连接自定义后端)
+# =============================================================================
+# CLOUD_API_BASE_URL=https://your-api-server.com
+# CLOUD_WS_URL=wss://your-ws-server.com
+
+# =============================================================================
+# 开发调试用配置
+# =============================================================================
+# 启用详细日志
+# DEBUG_VERBOSE_LOG=true
+
+# 跳过某些构建任务加速开发
+# SKIP_LINT=false

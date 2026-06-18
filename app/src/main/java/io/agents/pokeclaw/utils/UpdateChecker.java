@@ -9,6 +9,8 @@ import android.content.pm.ApplicationInfo;
 import android.content.Intent;
 import android.net.Uri;
 
+import io.agents.pokeclaw.BuildConfig;
+
 import org.json.JSONObject;
 
 import java.io.BufferedReader;
@@ -29,6 +31,11 @@ public class UpdateChecker {
     private static final long CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000; // Once per day
 
     public static void checkForUpdate(Activity activity) {
+        if (!isUpdateCheckEnabledForBuild()) {
+            XLog.i(TAG, "Skipping update check for this build type");
+            return;
+        }
+
         boolean debugBuild = (activity.getApplicationInfo().flags & ApplicationInfo.FLAG_DEBUGGABLE) != 0;
         XLog.d(TAG, "Checking for updates on " + (debugBuild ? "debug" : "release") + " build");
 
@@ -120,5 +127,9 @@ public class UpdateChecker {
         } catch (Exception e) {
             XLog.w(TAG, "Failed to show update dialog", e);
         }
+    }
+
+    static boolean isUpdateCheckEnabledForBuild() {
+        return BuildConfig.UPDATE_CHECK_ENABLED;
     }
 }

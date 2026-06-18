@@ -49,11 +49,11 @@ class ConfigServer(
                 uri == "/api/channels" && method == Method.POST -> handlePostChannels(session)
                 uri == "/api/llm" && method == Method.GET -> handleGetLlm()
                 uri == "/api/llm" && method == Method.POST -> handlePostLlm(session)
-                uri == "/debug.html" && method == Method.GET && BuildConfig.DEBUG -> serveDebugHtml()
-                uri == "/api/debug/tools" && method == Method.GET && BuildConfig.DEBUG -> handleGetTools()
-                uri == "/api/debug/execute" && method == Method.POST && BuildConfig.DEBUG -> handleExecuteTool(session)
-                uri == "/api/debug/screen-full" && method == Method.GET && BuildConfig.DEBUG -> handleGetScreenFull()
-                uri.startsWith("/api/debug/file") && method == Method.GET && BuildConfig.DEBUG -> handleServeFile(session)
+                uri == "/debug.html" && method == Method.GET && BuildConfig.DEBUG_AUTOMATION_ENABLED -> serveDebugHtml()
+                uri == "/api/debug/tools" && method == Method.GET && BuildConfig.DEBUG_AUTOMATION_ENABLED -> handleGetTools()
+                uri == "/api/debug/execute" && method == Method.POST && BuildConfig.DEBUG_AUTOMATION_ENABLED -> handleExecuteTool(session)
+                uri == "/api/debug/screen-full" && method == Method.GET && BuildConfig.DEBUG_AUTOMATION_ENABLED -> handleGetScreenFull()
+                uri.startsWith("/api/debug/file") && method == Method.GET && BuildConfig.DEBUG_AUTOMATION_ENABLED -> handleServeFile(session)
                 else -> corsResponse(
                     newFixedLengthResponse(
                         Response.Status.NOT_FOUND, MIME_JSON,

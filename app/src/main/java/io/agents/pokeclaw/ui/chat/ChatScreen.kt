@@ -314,8 +314,7 @@ fun ChatScreen(
             ) {
                 if (!isDownloading) {
                     // v9: always show messages or empty state regardless of mode
-                    val userMessages = messages.filter { it.role != ChatMessage.Role.SYSTEM }
-                    if (userMessages.isEmpty()) {
+                    if (messages.isEmpty()) {
                         EmptyStateWithPrompts(
                             isLocalModel = isLocalUI,
                             onSelectPrompt = { text, isTask ->

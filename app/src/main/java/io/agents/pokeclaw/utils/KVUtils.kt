@@ -468,7 +468,7 @@ object KVUtils {
 
     // ==================== Missed Call Follow-up (R2 US-B-MISSED-CALL-FOLLOWUP) ====================
     private const val KEY_MISSED_CALL_FOLLOWUP_ENABLED = "KEY_MISSED_CALL_FOLLOWUP_ENABLED"
-    fun isMissedCallFollowupEnabled(): Boolean = getBoolean(KEY_MISSED_CALL_FOLLOWUP_ENABLED, true)
+    fun isMissedCallFollowupEnabled(): Boolean = getBoolean(KEY_MISSED_CALL_FOLLOWUP_ENABLED, false)
     fun setMissedCallFollowupEnabled(value: Boolean) = putBoolean(KEY_MISSED_CALL_FOLLOWUP_ENABLED, value)
 
     private const val KEY_MISSED_CALL_SMS_TEMPLATE = "KEY_MISSED_CALL_SMS_TEMPLATE"
