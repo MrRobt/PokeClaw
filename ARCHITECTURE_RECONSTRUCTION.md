@@ -575,3 +575,35 @@ If a proposed refactor does not make one of these easier:
 - future feature velocity
 
 then it is probably not worth landing yet.
+
+## Landed Capabilities Not Yet in the Phase Map (2026-07)
+
+These landed on top of the phase work above and belong in this doc so the
+reconstruction model stays honest about what actually exists.
+
+### Reliability layer — action validation + execution trace
+
+`agent → tool` execution now runs through a thin reliability stage
+(`reliability/action/*`, `reliability/trace/ExecutionTrace`):
+
+- `ToolRegistry.executeTool` builds a `ReliableAction`, runs `ActionValidator`
+  (unknown tool / missing required param / out-of-range `wait_after` → blocked
+  with a classified `ToolResult.ErrorType` before the real tool is called), then
+  traces validation → execution → result.
+- `TaskOrchestrator` brackets each task with `ExecutionTrace.startTask` /
+  `finishTask` (success / failed / cancelled / blocked).
+- `ToolResult` now carries an `ErrorType` classification.
+
+Invariants: must not change the outcome of a *valid* tool call (only pre-empt
+malformed ones); the trace is in-memory + logcat only (no storage/network).
+Verified at **E1** (unit): `reliability/*` 9/9 green. Emulator/device regression
+(E2/E3) still owed.
+
+### Out-of-plan subsystem: cloud / 端云
+
+This document's mental model is chat / task / accessibility / model. It does
+**not** cover the ~90-file `cloud/` + `cloudnode/` + `server/` + `scheduler/`
+edge-cloud subsystem that `ClawApplication` wires in. That subsystem is
+off-by-default and unverified; its boundary, invariants, and known issues live
+in `CLOUD_SUBSYSTEM_BOUNDARY.md`. Treat it as quarantined until it has an owner
+and a real-backend QA gate — do not fold it into the local-first phase work.
