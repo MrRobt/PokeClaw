@@ -6,6 +6,7 @@ Every build must pass ALL checks before shipping.
 
 | 日期 | 状态 | 问题编号 | 描述 |
 |------|------|----------|------|
+| 2026-07-07 | AUDIT | EVIDENCE-DISCIPLINE | 自主迭代 P0-2：引入「证据等级 E0–E3」约定（见 Methodology 新增小节「Evidence Levels」）——每个 `PASS` 必须带证据等级，code-review-only 记 `CODE-READY` 而非 `PASS`；Release Gate 模板加「Evidence-level gate」。历史审计：2026-06-17 一批标 `PASS` 的条目描述含「代码就绪 / 代码路径已验证」，实为 **E0（code-review）**、非真机验证；同日 `DEVICE-E2E-CURRENT` 为 `BLOCKED`（无真机/AVD）。历史行不改写，但今后按新约定分级，杜绝走查冒充真机 PASS。|
 | 2026-07-07 | PASS | P0-1-RELIABILITY-VERIFY | 自主迭代 P0-1 验证：headless Android SDK bootstrap（android-36 / build-tools 36.0.0）后在 main v0.7.2 上真跑——`:app:compileDirectDebugKotlin` BUILD SUCCESSFUL（仅 deprecation 警告）；`:app:testDirectDebugUnitTest --tests "*ActionValidatorTest"` **4/4 通过**（0 fail / 0 error：validateMissingRequiredParameterBlocksAction、executeToolDoesNotCallRealToolWhenActionInvalid、executeToolClassifiesUnknownTool、executeToolRecordsSuccessWhenActionValid）。reliability 动作校验+执行追踪的编译与单元行为均验证。**证据等级 E1（unit）**；E2（emulator smoke）因本沙箱无 AVD/系统镜像暂标 BLOCKED。P0-1 从 E0 升 E1。|
 | 2026-07-07 | CODE-READY | P0-1-RELIABILITY | 自主迭代 P0-1：从 origin/dev 抢救 reliability 功能到 main（v0.7.2）——ActionValidator 执行前动作校验 + ExecutionTrace 全链路追踪。ToolResult 纯追加 ErrorType/errorType/classify()/2参error()；ToolRegistry.executeTool 接入 校验→追踪→执行→记录；TaskOrchestrator 加 startTask + 6 处 finishTask 生命周期埋点；含 ActionValidatorTest 4 用例。已逐符号手工核对 main API 兼容（BaseTool 抽象集 / ToolParameter.isRequired / ToolResult 成员全匹配）。证据等级 **E0（code-review）**：本沙箱缺 Android SDK，compile/unit 门槛 BLOCKED，已后台 bootstrap Android SDK 以便下一轮升到 E2。分支 feature/reliability-salvage |
 | 2026-06-18 | BLOCKED | COMMERCIAL-RELEASE-READINESS-CURRENT-9 | Added `scripts/commercial_readiness_audit.py` as a one-command local commercial audit. It checks workflow self-test coverage, runs `release_scripts_selftest.py`, runs the Play-safe release gate with the current default version, verifies the direct APK, Play APK, and Play AAB artifacts, runs the Play AAB bundletool universal APK manifest check, and runs `:app:testDirectDebugUnitTest :app:testPlayDebugUnitTest` unless `--skip-gradle-tests` is passed. It separates local failures from `BLOCKED_EXTERNAL` items and supports `--fail-on-external-blockers` for final release checklist runs. Verified the fast path `python scripts\commercial_readiness_audit.py --skip-network --skip-gradle-tests`, the full path `python scripts\commercial_readiness_audit.py`, and strict mode returning exit code `2` when expected external blockers remain; local gates passed in each run. The full run confirmed default `0.7.2` is newer than public latest `0.7.1`, direct APK SHA-256 `C6D9F973AE1001446714F5A2067184CE4D024DC7476A05507104726EF732416E`, Play APK SHA-256 `034174679AA5326C7A36B8DA97559776875507DF2ADA2674AD3982FE992E4118`, Play AAB SHA-256 `25663BE0757DDB2246E3DC087DD3B46FCF476C9155C5900D07D8B7521D660BFF`, and direct/play unit tests passed. Public commercial release remains blocked on external evidence: artifacts are QA-signed instead of the expected public signer `e000d1d6555b8fab20c03a5d9ddeba83944f26eecf0b978ac7affc2eebd43186`, release signing inputs are absent in this shell, production Cloud LLM API key/endpoint evidence is missing, writable WhatsApp/Telegram/Gmail account flows are not rerun, and direct-channel missed-call SMS still needs policy/approval evidence outside the Play-safe flavor |
@@ -174,6 +175,23 @@ Use these rules:
    - Record them separately from the success-rate denominator when the root cause is external (permissions, missing contacts, runtime dialogs, missing app, absent sender device)
 
 Never claim "fixed" from a single green run on a stochastic Cloud workflow.
+
+### Evidence Levels — Tag Every PASS (证据等级)
+
+QA 的可信度取决于「证据强度」，不只是「测试深度」（见上面「Three QA Layers」）。历史上一批「代码就绪 / 代码路径已验证」的走查被记成 `PASS`，与真机 `PASS` 混在同一列，导致覆盖率虚高。规定：
+
+**每条 changelog 的 `PASS` 必须带一个证据等级**，说明这个结论是怎么来的：
+
+- **E0 code-review** — 只做了源码走查 / 类型核对。**不是功能通过**，不得单独记为 `PASS`；改用状态 `CODE-READY`。
+- **E1 unit/mock** — JVM 单测或 mock 后端/LLM 通过。证明契约与纯逻辑，不证明真实设备行为。
+- **E2 emulator** — 在 emulator / AVD（多为 x86_64）上真跑通过。不等于目标真机（ARM / OEM ROM）。
+- **E3 real-device** — 在物理目标机（如 Pixel 8 Pro / ARM）上真跑通过。
+
+规则：
+- 改动路径的**发布 / RC 结论必须到 E3**；招牌能力要 E3 且按重复试验成功率判定（见上一节）。
+- 只做了走查 → 记 `CODE-READY`（E0），别记 `PASS`。
+- 需要真机 / 第二设备 / SIM / 真实三方账号 / 生产 Cloud key 而做不了 → 记 `BLOCKED` 并写明缺什么，别用 E0/E1/E2 冒充 E3。
+- emulator 通过封顶 E2；未在真机复测前不得升 E3。
 
 ### Device Setup
 
@@ -587,6 +605,7 @@ Copy this block into the current coverage snapshot or QA debug changelog for eve
 - [ ] Artifact gate: `./gradlew assembleDebug` or signed release workflow completed
 - [ ] Targeted regression gate: relevant bundle from "Refactor Regression Bundles" rerun
 - [ ] Device smoke gate: at least one real-device smoke for the changed runtime/product path
+- [ ] Evidence-level gate: 上面每个 `PASS` 都标了证据等级 E0–E3；发布结论为 E3（真机），无 code-review 走查冒充 verified
 - [ ] Distribution gate: install/upgrade behavior, signing path, release asset, and checksum are verified or explicitly documented as blocked
 - [ ] User-followup gate: affected GitHub/Reddit users are told exactly which stable release to retest and what debug ZIP to attach if it still fails
 - Known misses:
