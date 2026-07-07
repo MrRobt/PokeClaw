@@ -4,6 +4,10 @@
 package io.agents.pokeclaw.tool
 
 import io.agents.pokeclaw.agent.knowledge.*
+import io.agents.pokeclaw.reliability.action.ActionValidator
+import io.agents.pokeclaw.reliability.action.ReliableAction
+import io.agents.pokeclaw.reliability.action.ReliableActionResult
+import io.agents.pokeclaw.reliability.trace.ExecutionTrace
 import io.agents.pokeclaw.tool.impl.*
 import io.agents.pokeclaw.tool.impl.mobile.*
 import io.agents.pokeclaw.tool.impl.tv.*
@@ -87,12 +91,29 @@ object ToolRegistry {
     fun getAllTools(): List<BaseTool> = tools.values.toList()
 
     fun executeTool(name: String, params: Map<String, Any>): ToolResult {
-        val tool = tools[name] ?: return ToolResult.error("Unknown tool: $name")
-        return try {
-            tool.executeWithWaitAfter(params)
+        // Reliability stage 1: describe the action, validate it, and trace the whole execution.
+        // A hard-invalid action (unknown tool / missing required param / bad wait_after) is
+        // blocked here so the real tool is never called with a malformed action.
+        val action = ReliableAction.fromToolCall(name, params)
+        val tool = tools[name]
+        val validation = ActionValidator.validate(action, tool)
+        ExecutionTrace.recordValidation(action, validation.isValid, validation.message, validation.errorType)
+        if (!validation.isValid) {
+            io.agents.pokeclaw.utils.XLog.w("ToolRegistry", "Reliable action validation blocked '${action.toolName}': ${validation.message}")
+            val result = ToolResult.error(validation.message, validation.errorType)
+            ExecutionTrace.recordResult(ReliableActionResult.fromToolResult(action, result, action.createdAtMs))
+            return result
+        }
+
+        val startedAtMs = System.currentTimeMillis()
+        ExecutionTrace.recordExecutionStart(action)
+        val result = try {
+            tool!!.executeWithWaitAfter(params)
         } catch (e: Exception) {
             io.agents.pokeclaw.utils.XLog.e("ToolRegistry", "Tool '$name' execution failed with params=$params", e)
-            ToolResult.error("Tool execution failed: ${e.message}")
+            ToolResult.error("Tool execution failed: ${e.message}", ToolResult.ErrorType.TOOL_EXCEPTION)
         }
+        ExecutionTrace.recordResult(ReliableActionResult.fromToolResult(action, result, startedAtMs))
+        return result
     }
 }
