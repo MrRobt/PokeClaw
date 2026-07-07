@@ -8,6 +8,8 @@ Priority: `P0` = blocks users, fix now. `P1` = next up. `P2` = when we get to it
 
 ## Bugs
 
+- [ ] **P1** (自主迭代 P1-3 发现) Cloud 子系统硬编码私有兜底 endpoint `http://192.168.250.3:8080` 焊死在发布包里；应移除 / 改 debug-only / 默认无端点。见 `CLOUD_SUBSYSTEM_BOUNDARY.md` §3.1
+- [ ] **P2** (自主迭代 P1-3) Cloud 子系统：disabled 时改惰性构造（现每次启动都构造 orchestrator/client）+ 加 `CLOUD_NODE_ENABLED` BuildConfig 硬关 + 补 reconstruction phase/owner，或抽独立 module。见 `CLOUD_SUBSYSTEM_BOUNDARY.md` §6
 - [ ] **P1** Historical upgrade gap: users on the older public debug signing path still need a one-time uninstall + reinstall because the original public signing key is already lost
 - [ ] **P2** K3-a: Auto-return fires on every service connect, not just user-initiated permission enable
 - [ ] **P2** B2-a: No auto-return to PokeClaw after task completes in another app (e.g., stuck in YouTube)

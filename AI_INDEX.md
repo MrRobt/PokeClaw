@@ -12,6 +12,7 @@ This is the repo map for coding agents. Keep canonical information in existing f
 | `RELEASING.md` | Release signing, tag workflow, stable APK publishing |
 | `BACKLOG.md` | Prioritized bugs, features, QA gaps, ideas |
 | `ARCHITECTURE_RECONSTRUCTION.md` | Historical architecture reconstruction plan and refactor guardrails |
+| `CLOUD_SUBSYSTEM_BOUNDARY.md` | Boundary/quarantine + invariants for the on-device cloud/端云 subsystem (off-by-default, unverified) |
 | `CLA.md` | Contributor license agreement |
 | `AI_INDEX.md` | This repo map |
 
