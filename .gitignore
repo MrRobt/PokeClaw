@@ -22,3 +22,18 @@ CLAUDE.local.md
 thoughts/
 .claudeignore
 /.kotlin/
+
+# Local agent/session state
+/.omc/
+/.serena/
+/.spec-workflow/
+
+# Local test and runtime artifacts
+/Screenshots/*.png
+/emulator-*.png
+/replay_pid*.log
+/app-debug-androidTest.zip
+/app-debug-androidTest-unzip/
+/app/hs_err_pid*.log
+__pycache__/
+*.py[cod]
