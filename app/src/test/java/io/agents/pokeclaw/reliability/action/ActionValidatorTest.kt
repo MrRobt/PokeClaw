@@ -53,6 +53,44 @@ class ActionValidatorTest {
         assertEquals(1, tool.executeCount)
     }
 
+    @Test
+    fun validateRejectsOutOfRangeWaitAfter() {
+        val action = ReliableAction.fromToolCall("fake_required", mapOf("text" to "x", "wait_after" to "99999"))
+        val result = ActionValidator.validate(action, FakeTool("fake_required"))
+        assertFalse(result.isValid)
+        assertEquals(ToolResult.ErrorType.INVALID_ACTION, result.errorType)
+    }
+
+    @Test
+    fun validateAcceptsInRangeWaitAfter() {
+        val action = ReliableAction.fromToolCall("fake_required", mapOf("text" to "x", "wait_after" to "2000"))
+        assertTrue(ActionValidator.validate(action, FakeTool("fake_required")).isValid)
+    }
+
+    @Test
+    fun validateRejectsWrongParameterType() {
+        val action = ReliableAction.fromToolCall("fake_int", mapOf("count" to "not-a-number"))
+        val result = ActionValidator.validate(action, FakeIntTool("fake_int"))
+        assertFalse(result.isValid)
+        assertEquals(ToolResult.ErrorType.INVALID_ACTION, result.errorType)
+    }
+
+    @Test
+    fun validateAcceptsCorrectIntType() {
+        val action = ReliableAction.fromToolCall("fake_int", mapOf("count" to "42"))
+        assertTrue(ActionValidator.validate(action, FakeIntTool("fake_int")).isValid)
+    }
+
+    private class FakeIntTool(private val name: String) : BaseTool() {
+        override fun getName(): String = name
+        override fun getParameters(): List<ToolParameter> = listOf(
+            ToolParameter("count", "integer", "required count", true)
+        )
+        override fun execute(params: Map<String, Any>): ToolResult = ToolResult.success("ok")
+        override fun getDescriptionEN(): String = "fake"
+        override fun getDescriptionCN(): String = "测试"
+    }
+
     private class FakeTool(private val name: String) : BaseTool() {
         var executeCount: Int = 0
 

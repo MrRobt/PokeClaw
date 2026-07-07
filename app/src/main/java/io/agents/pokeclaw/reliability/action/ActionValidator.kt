@@ -48,7 +48,7 @@ object ActionValidator {
         }
 
         action.parameters["wait_after"]?.let { waitAfter ->
-            val waitMs = waitAfter.toLongOrNull()
+            val waitMs = waitAfter.asLong()
             if (waitMs == null || waitMs !in 0..MAX_WAIT_AFTER_MS) {
                 return ValidationResult.invalid(
                     "Invalid action '${action.toolName}': wait_after must be 0..$MAX_WAIT_AFTER_MS ms"
@@ -70,10 +70,9 @@ object ActionValidator {
     }
 
     private fun matchesType(value: Any, spec: ToolParameter): Boolean {
-        if (value == null) return !spec.isRequired
         return when (spec.type.lowercase()) {
             "string" -> true // 现有工具大量使用 toString()，只要求非空必填已由上层处理。
-            "integer", "int", "long" -> value.toLongOrNull() != null
+            "integer", "int", "long" -> value.asLong() != null
             "number", "float", "double" -> value.toString().toDoubleOrNull() != null
             "boolean", "bool" -> value is Boolean || value.toString().lowercase() in setOf("true", "false")
             "array", "list" -> value is Collection<*> || value.javaClass.isArray
@@ -82,7 +81,9 @@ object ActionValidator {
         }
     }
 
-    private fun Any?.toLongOrNull(): Long? = when (this) {
+    // NOTE: must NOT be named toLongOrNull — a private Any?.toLongOrNull() shadows
+    // kotlin.text.String.toLongOrNull() inside its own body and self-recurses (StackOverflow).
+    private fun Any?.asLong(): Long? = when (this) {
         is Number -> toLong()
         else -> this?.toString()?.toLongOrNull()
     }
