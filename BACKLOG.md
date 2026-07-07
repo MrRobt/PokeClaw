@@ -16,7 +16,7 @@ Priority: `P0` = blocks users, fix now. `P1` = next up. `P2` = when we get to it
 
 ## Features
 
-- [ ] **P0** (自主迭代) reliability salvage：从 origin/dev 抢救 ActionValidator 动作校验 + ExecutionTrace 执行追踪到 main（v0.7.2）。code-ready on `feature/reliability-salvage`，compile/unit 门槛待 Android SDK bootstrap 完成后升到 E2 验证
+- [x] ~~**P0** (自主迭代) reliability salvage~~ — 2026-07-07 完成（E1）：从 origin/dev 抢救 ActionValidator 动作校验 + ExecutionTrace 执行追踪到 main（v0.7.2）。`compileDirectDebugKotlin` 通过 + `ActionValidatorTest` 4/4 通过。commit `29edd7a` on `feature/reliability-salvage`；E2 emulator smoke 因沙箱无 AVD 待补
 - [x] ~~**P0** Missed-call auto follow-up~~ — implemented 2026-06-16: MissedCallReceiver检测未接来电，WorkManager调度SMS follow-up，Settings开关+模板配置，ComposeChatActivity状态显示，SMS-native API优先
 - [x] ~~**P0** Production external automation intent: promote the debug-only task/chat broadcast into a user-enabled production API for Tasker, MacroDroid, Locale, and ADB-style callers. It should accept explicit package/component broadcasts with `task` / `chat` / base64 extras, preserve harness safety rules, and optionally return a result callback intent.~~ — implemented 2026-04-30; callback contract exists, Tasker/MacroDroid callback E2E remains a QA gap
 - [ ] **P1** Persistent global instructions: add a user-editable local instructions layer that applies to new tasks/conversations without becoming a prompt dump. It must be short, inspectable, removable, local-first, and separate from hard safety/tool rules.
