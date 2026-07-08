@@ -21,6 +21,15 @@ This is the repo map for coding agents. Keep canonical information in existing f
 | Path | Purpose |
 |------|---------|
 | `app/src/main/java/io/agents/pokeclaw/` | Android app source |
+| `app/src/main/java/io/agents/pokeclaw/vision/` | Cloud-YOLO client: model routing/cache/update, weak-label detector, descriptors |
+| `app/src/main/java/io/agents/pokeclaw/explore/` | Auto software-explorer: state-hash dedup, action frontier, coverage, `SoftwareExplorer` |
+| `app/src/main/java/io/agents/pokeclaw/collect/` | YOLO data collection: `CollectedSample`, payload builder, uploader, trajectory |
+| `app/src/main/java/io/agents/pokeclaw/device/` | Device actuator/observer (local Accessibility + remote CloudPhone) |
+| `app/src/main/java/io/agents/pokeclaw/cloud/modelhub/` | Model Hub Retrofit/OkHttp client + DTOs |
+| `app/src/main/java/io/agents/pokeclaw/cloud/cloudphone/` | dyq cloud-phone instance client (list/connect/control) |
+| `app/src/main/java/io/agents/pokeclaw/ui/console/VisionConsoleActivity.kt` | Cloud-YOLO management console |
+| `docs/AGENT_CLAW_YOLO_SYSTEM.md` | App↔cloud Agent-controls-Claw + per-software YOLO model center (design/run/verify) |
+| `../dyq/claw-yolo-hub/` | Cloud YOLO model center (FastAPI): routing, datasets, training, publish/rollback |
 | `app/src/main/assets/playbooks/` | Built-in playbooks used by the agent harness |
 | `app/src/test/` | JVM/unit regression tests |
 | `scripts/` | QA and automation scripts |

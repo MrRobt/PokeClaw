@@ -42,6 +42,16 @@ Priority: `P0` = blocks users, fix now. `P1` = next up. `P2` = when we get to it
 - [ ] **P3** Floating button: use PokeClaw icon instead of "AI" text
 - [ ] **P3** ChatViewModel extraction: move business logic out of ComposeChatActivity god class
 
+### Agent-controls-Claw + Cloud-YOLO (per-software model center)
+
+- [x] ~~**P1** App-side Agent→Claw + cloud per-software YOLO system~~ — 2026-07-08: `vision/`+`explore/`+`collect/`+`device/`+`cloud/modelhub`+`cloud/cloudphone`+`ui/console/VisionConsoleActivity`; cloud `../dyq/claw-yolo-hub` (FastAPI). Routing (active→category→generic), model cache/version-update, weak-label detector, auto-explorer (state-hash dedup + coverage), dataset upload by software_key, simulated training→candidate→promote/rollback. 19 JVM tests + 5 hub E2E green; `assembleDirectDebug` builds. See `docs/AGENT_CLAW_YOLO_SYSTEM.md`.
+- [ ] **P1** Real on-device YOLO inference: wire ONNX/LiteRT into `vision/YoloModelBackend` (currently delegates to weak labels; detections already carry model id/version)
+- [ ] **P1** Real cloud training: run gxe/ultralytics from `claw-yolo-hub` (`YOLOHUB_REAL_TRAINER=1`) where GPU is available; today training metrics are simulated from dataset volume/quality
+- [ ] **P2** Remote observation: decode the cloud-phone screen-wall stream so `CloudPhoneActuator` gets a matching `DeviceObserver` (remote explore, not just remote control)
+- [x] ~~**P1** Java `dyq-module-claw` YOLO 模型中心~~ — 2026-07-08 直接 Java 实现（非 proxy，逻辑等价 Python hub）：4 DO + 4 Mapper + `YoloHubService[Impl]` + `YoloDeviceController`(`/api/v1`,@PermitAll) + snake-case VO + `ClawYoloAuthorizeRequestsCustomizer` + SQL。codex 二审 + 独立复核**零编译错误**。已修 3 个真 bug：①多租户 NPE（4 张 YOLO 表加入 `dyq-server`/`-cloudphone`/`-hermes`/`-aigc-publish` 的 `tenant.ignore-tables`，否则设备端无租户上下文首调即 500 静默失败）②App `TrainingJobDto.metrics` 类型（`Map<String,Double>`→`Map<String,Any?>`，否则 `"simulated":true` 布尔令 Gson 抛异常静默返回 null）③`uploadSamples` 空 batch 判空。**待测试服务器 `mvn` 编译确认**。
+- [ ] **P3** (dyq 历史遗留，codex 发现，与本次 YOLO 无关) 其它 server 变体的 `tenant.ignore-tables` 缺 `claw_device*` 三表豁免，设备端 `/api/claw-device/**` 有同样 NPE 风险——需确认哪些 binary 承接设备流量后统一补
+- [ ] **P2** On-device E2E (E3) for the whole loop on a real cloud phone: identify→resolve→detect→explore→collect→upload→train→promote→update (blocked here: no adb/device in sandbox)
+
 ## QA Gaps
 
 - [ ] **P0** Missed-call follow-up E2E: missed-call notification / phone-state trigger reaches PokeClaw, follow-up message is sent to the caller, and the result/status is visible in the same chatroom — code ready, blocked on 2nd device/SIM

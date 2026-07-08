@@ -69,6 +69,15 @@
             android:exported="false"
             android:screenOrientation="portrait" />
         <activity
+            android:name=".ui.console.VisionConsoleActivity"
+            android:exported="true"
+            android:label="Claw YOLO Console"
+            android:screenOrientation="portrait" />
+        <activity
+            android:name=".ui.console.OnDeviceConsoleActivity"
+            android:exported="false"
+            android:screenOrientation="portrait" />
+        <activity
             android:name=".ui.chat.ComposeChatActivity"
             android:exported="false"
             android:screenOrientation="portrait"
