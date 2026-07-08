@@ -25,6 +25,13 @@ adb -s "$D" shell getprop ro.product.model   # 验证 → SM-S938B
 - 大文件（APK ~122MB）传输到云手机较慢，`adb install` 请用后台/长超时，勿被前台超时打断。
 - #1 已装 **Chrome / Gmail / Play 商店**；WhatsApp/Telegram/YouTube 未装（可经 Play 安装）。
 
+## 测试 Google 账号（用于 Gmail / Play 商店 等需登录的任务）
+> ⚠️ 一次性测试账号（disposable，非个人）。测完请回收；向公开快照发布前先删本文件。
+- 邮箱：`kyuble1vxodpv@plo.chaoniua.org`
+- 密码：`jiwngi5kvtwf1`
+- 用途：在云手机上登录 Google → 使 **Gmail 写信 / Play 商店安装** 等需账号的核心任务可测。
+- 登录：Settings → Accounts → Add account → Google（或让 PokeClaw agent 走登录流程）。注意 Google 对自动化登录有风控，可能需人工过验证/二次确认。
+
 ## 无印云手机 OpenAPI 工具（本仓库内）
 - 位置：`tools/wuyin-cloudphone/`（`SKILL.md` + `scripts/wuyin_cloudphone.py`，Python3 标准库无依赖）。
 - 凭证走环境变量 `WUYIN_ACCESS_KEY` / `WUYIN_SECRET_KEY`（**勿硬编码**）。
