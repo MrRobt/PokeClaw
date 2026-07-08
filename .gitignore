@@ -19,6 +19,10 @@ app/src/main/assets/.pcfp
 
 # Claude Code local session state (not for git)
 CLAUDE.local.md
+
+# Local test credentials — secrets, NEVER commit (this repo squashes to public forks)
+TEST_CREDENTIALS.local.md
+.test-credentials*
 thoughts/
 .claudeignore
 /.kotlin/
