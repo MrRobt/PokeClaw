@@ -54,6 +54,7 @@ Priority: `P0` = blocks users, fix now. `P1` = next up. `P2` = when we get to it
 - [x] ~~**P1** H3 降级链·三级人工接管闭合~~ — 2026-07-09 补 `ClawTaskTakeoverConsumer` 接住接管通知(此前 fire-and-forget),mvn BUILD SUCCESS。
 - [ ] **P1** (H3 架构 gap,Architecture-Before-Features) cloud_agent「云端大模型接手」这级无法闭合:`ClawTaskDispatchReqVO`/`ClawTaskDO`/`ClawTaskAssignedMessage` 全链路无 userId,而 `ClawHermesService.command` 需 userId(每用户小龙虾)。**需先决策 cloud_agent 任务如何绑执行主体**(全链路补 userId + `claw_task.user_id` 列 / 或 Hermes 支持租户级默认虾),再写 `ClawTaskAssignedConsumer` 调 Hermes 执行 + 回写。
 - [ ] **P2** (H3 协议对齐) 端云错误协议:端发 `recoverable/suggestedAction`,云 VO `AppClawDeviceTaskResultReqVO` 只认 `failureType` → 云端关键字猜测。补 `needsEscalation` 字段 + 端侧上报,让端侧"需接管"驱动云端重派(端侧 `runAgentLoopFallback` 端内升级已有)。
+- [x] ~~**P1** YOLO 真训练(替换 training_sim 模拟)~~ — 2026-07-09 **E3 通过**:`train_smoke.py` 证真训练管线(android 截图→yolo_ui_v0 弱标签→ultralytics→22MB best.pt);`training_sim._real_train` 从占位改为正确实现(`_build_ultralytics_dataset` 组织 raw+yolo_labels→images/labels,本地 PASS;base/epochs/imgsz/device 环境可配)。hub 5/5 e2e 仍通过。
 - [ ] **P2** (H4 发现) dyq `submitTaskResult` 对不存在 taskUuid 返回 HTTP200 code=500「系统异常」→ 应返回明确「任务不存在」错误码，别抛到全局兜底
 - [ ] **P1** On-device 整链路 E3（测试环境 `pokeclaw-test` 已具备条件：android `emulator-5554` adb + dyq `:48081` + control `vision-engine :8081`）：identify→resolve→detect→explore→collect→upload→train→promote→update
 
