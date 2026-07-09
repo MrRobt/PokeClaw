@@ -14,7 +14,15 @@ import io.agents.pokeclaw.cloudnode.CloudTaskErrorCode
 import io.agents.pokeclaw.cloudnode.CloudTaskExecutionResult
 import io.agents.pokeclaw.cloudnode.CloudTaskSkillMapper
 import io.agents.pokeclaw.cloudnode.SkillMapping
+import io.agents.pokeclaw.ClawApplication
+import io.agents.pokeclaw.TaskEvent
 import io.agents.pokeclaw.utils.XLog
+import java.util.concurrent.atomic.AtomicBoolean
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withTimeoutOrNull
 
 /**
  * 云端任务执行器接口。
@@ -65,6 +73,39 @@ class LocalAgentTaskExecutor(
             )
         }
 
+        // P0-2 远程下发 skill 安装:command 形如 "install_skill:<JSON定义>"。
+        // 复用已验证的设备任务通道(device token 鉴权)把 skill 定义(steps)下发到端侧,
+        // 解析后注入 SkillRegistry → 本地 agent 路由即可用(app-api marketplace 需用户登录、设备够不着)。
+        if (command.startsWith(INSTALL_SKILL_PREFIX)) {
+            val defJson = command.removePrefix(INSTALL_SKILL_PREFIX).trim()
+            val skill = io.agents.pokeclaw.cloud.lobster.RemoteSkillInstaller.parseSkillDefinition(defJson)
+            return if (skill == null) {
+                XLog.w(TAG, "execute: install_skill 定义无效,taskUuid=${task.taskUuid}")
+                CloudTaskExecutionResult.failure(
+                    message = "skill 定义无效或缺 steps",
+                    errorCode = CloudTaskErrorCode.TASK_REJECTED,
+                    retryable = false,
+                )
+            } else {
+                SkillRegistry.register(skill)
+                XLog.i(
+                    TAG,
+                    "execute: ✅ 已安装远程下发 skill id=${skill.id} steps=${skill.steps.size} " +
+                        "triggers=${skill.triggerPatterns}; SkillRegistry 现有 ${SkillRegistry.getAll().size}"
+                )
+                CloudTaskExecutionResult.success(
+                    message = "已安装 skill ${skill.id}(${skill.steps.size} 步)",
+                    artifacts = listOf(
+                        "action:install_skill",
+                        "skillId:${skill.id}",
+                        "steps:${skill.steps.size}",
+                        "triggers:${skill.triggerPatterns.joinToString("|")}",
+                        "taskUuid:${task.taskUuid}",
+                    ),
+                )
+            }
+        }
+
         // 0. mode 预处理：dry_run / prepare_only（v1.1.0 扩展）跳过真实执行，
         //    上报固定 stub 字符串 + 完整 artifacts，让云端能区分"未执行"与"执行失败"。
         val mode = task.modeAsEnum()
@@ -89,12 +130,9 @@ class LocalAgentTaskExecutor(
         // 1. 指令映射
         val mapping = CloudTaskSkillMapper.mapToSkill(command)
         if (mapping == null || mapping.confidence < 0.5) {
-            XLog.w(TAG, "execute: 无法确定性映射指令到本地技能: $command")
-            return CloudTaskExecutionResult.failure(
-                message = "不支持的任务类型: $command",
-                errorCode = CloudTaskErrorCode.TASK_REJECTED,
-                retryable = false,
-            )
+            // P0-1:map 不到确定性 skill → 走完整 MiniMax agent loop 兜底,让 dyq 下发的任意任务真·AI 驱动。
+            XLog.i(TAG, "execute: 无确定性 skill 映射,转 agent-loop 兜底: $command")
+            return runAgentLoopFallback(task)
         }
 
         // 2. 技能查找
@@ -136,7 +174,113 @@ class LocalAgentTaskExecutor(
         }
     }
 
-    override fun getModelName(): String = modelProvider()
+    @Volatile
+    private var lastModel: String = modelProvider()
+
+    override fun getModelName(): String = lastModel
+
+    /**
+     * P0-1 agent-loop 兜底：map 不到确定性 skill 时，走完整 MiniMax agent loop（经 [AppViewModel.startTask]），
+     * suspend 直到终态 [TaskEvent] 再转成结果 —— 让 dyq 下发的任意复杂任务真·AI 驱动。
+     *
+     * 正确性要点（见调研）：gate 单任务锁（`isTaskRunning`，须在 startTask 前）；startTask 主线程派发；
+     * 终态在 agent 执行线程回调 → 幂等 resume；取消 → stopTask。
+     */
+    private suspend fun runAgentLoopFallback(task: PendingTaskItem): CloudTaskExecutionResult {
+        val vm = ClawApplication.appViewModelInstance
+        if (vm.isTaskRunning()) {
+            return CloudTaskExecutionResult.failure(
+                message = "设备正忙：已有 PokeClaw 任务在执行",
+                errorCode = CloudTaskErrorCode.TASK_REJECTED,
+                retryable = true,
+            )
+        }
+        val resumed = AtomicBoolean(false)
+        var maxRound = 1
+        val result = withTimeoutOrNull(AGENT_LOOP_TIMEOUT_MS) { suspendCancellableCoroutine<CloudTaskExecutionResult> { cont ->
+            cont.invokeOnCancellation { runCatching { vm.stopTask() } }
+            fun settle(r: CloudTaskExecutionResult) {
+                if (resumed.compareAndSet(false, true)) {
+                    runCatching { vm.clearTaskCallback() }
+                    cont.resumeWith(Result.success(r))
+                }
+            }
+            val onEvent: (TaskEvent) -> Unit = { event ->
+                when (event) {
+                    is TaskEvent.LoopStart -> maxRound = maxOf(maxRound, event.round)
+                    is TaskEvent.Completed -> {
+                        event.modelName?.let { lastModel = it }
+                        settle(
+                            CloudTaskExecutionResult.success(
+                                message = event.answer,
+                                artifacts = listOf(
+                                    "taskUuid:${task.taskUuid}",
+                                    "rounds:$maxRound",
+                                    "model:$lastModel",
+                                    "agent_loop:true",
+                                ),
+                            )
+                        )
+                    }
+                    is TaskEvent.Failed -> settle(
+                        CloudTaskExecutionResult.failure(
+                            message = "agent loop 失败: ${event.error}",
+                            errorCode = CloudTaskErrorCode.TOOL_FAILED,
+                            retryable = true,
+                            artifacts = listOf("taskUuid:${task.taskUuid}", "agent_loop:true"),
+                        )
+                    )
+                    is TaskEvent.Blocked -> settle(
+                        CloudTaskExecutionResult.failure(
+                            message = "被系统对话框/安全策略拦截",
+                            errorCode = CloudTaskErrorCode.PERMISSION_MISSING,
+                            retryable = false,
+                        )
+                    )
+                    is TaskEvent.Cancelled -> settle(
+                        CloudTaskExecutionResult.failure(
+                            message = "任务已取消",
+                            errorCode = CloudTaskErrorCode.UNKNOWN,
+                            retryable = false,
+                        )
+                    )
+                    is TaskEvent.NeedsHuman -> settle(
+                        CloudTaskExecutionResult.failure(
+                            message = "需人工介入: ${event.reason}",
+                            errorCode = CloudTaskErrorCode.TASK_REJECTED,
+                            retryable = false,
+                        )
+                    )
+                    else -> Unit
+                }
+            }
+            CoroutineScope(Dispatchers.Main).launch {
+                try {
+                    vm.startTask(task.command, "cloud_${task.taskUuid}", onEvent = onEvent)
+                } catch (e: Exception) {
+                    settle(
+                        CloudTaskExecutionResult.failure(
+                            message = "startTask 异常: ${e.message}",
+                            errorCode = CloudTaskErrorCode.UNKNOWN,
+                            retryable = true,
+                        )
+                    )
+                }
+            }
+        } }
+        if (result == null) {
+            // 超时未产生终态 → 兜底返回 + 停任务,防止 orchestrator 卡死(P0-1 死锁修复)。
+            runCatching { vm.stopTask() }
+            runCatching { vm.clearTaskCallback() }
+            XLog.w(TAG, "runAgentLoopFallback: agent loop 超时未产生终态,taskUuid=${task.taskUuid}")
+            return CloudTaskExecutionResult.failure(
+                message = "agent loop 超时未完成",
+                errorCode = CloudTaskErrorCode.EXECUTION_TIMEOUT,
+                retryable = true,
+            )
+        }
+        return result
+    }
 
     /**
      * 构造证据 artifacts：包含 taskUuid / 技能 ID / 参数 / 步骤数 / 截图 URL 占位。
@@ -161,6 +305,8 @@ class LocalAgentTaskExecutor(
 
     private companion object {
         private const val TAG = "PokeClaw/LocalAgentTaskExecutor"
+        private const val INSTALL_SKILL_PREFIX = "install_skill:"
+        private const val AGENT_LOOP_TIMEOUT_MS = 240_000L
     }
 }
 

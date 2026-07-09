@@ -26,6 +26,9 @@ data class ClawAppSkillMarketRespVO(
     @SerializedName("version") val version: String? = null,
     @SerializedName("iconUrl") val iconUrl: String? = null,
     @SerializedName("channelCode") val channelCode: String? = null,
+    // P0-2 远程 skill 安装：可执行定义(steps JSON)。后端可放独立 definition 字段；
+    // 若后端仅返回元数据，安装器会回退用 description 承载定义(mock 约定)。
+    @SerializedName("definition") val definition: String? = null,
 )
 
 /**

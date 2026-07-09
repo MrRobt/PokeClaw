@@ -66,6 +66,13 @@ class DebugTaskReceiver : BroadcastReceiver() {
             handleSupportDebug(context, supportAction)
             return
         }
+        val skillAction = intent.getStringExtra("skill_action")?.trim().orEmpty()
+        if (skillAction.isNotEmpty()) {
+            runAsync("debug-skill-$skillAction") {
+                handleSkillDebug(skillAction)
+            }
+            return
+        }
         if (directTool.isNotEmpty()) {
             runAsync("debug-tool-$directTool") {
                 executeTool(intent, directTool, paramsJson)
@@ -338,6 +345,21 @@ class DebugTaskReceiver : BroadcastReceiver() {
         } catch (e: Exception) {
             XLog.e("DebugTaskReceiver", "Failed support_action=$action", e)
             breadcrumb(context, "support exception action=$action error=${e.message}")
+        }
+    }
+
+    private fun handleSkillDebug(action: String) {
+        try {
+            when (action.lowercase()) {
+                "sync", "install" -> {
+                    val n = io.agents.pokeclaw.cloud.lobster.RemoteSkillInstaller.syncRemoteSkillsBlocking()
+                    XLog.i("DebugTaskReceiver", "skill sync: installed $n remote skill(s)")
+                    breadcrumb(io.agents.pokeclaw.ClawApplication.instance, "skill sync installed=$n")
+                }
+                else -> XLog.w("DebugTaskReceiver", "Unknown skill_action=$action")
+            }
+        } catch (e: Exception) {
+            XLog.e("DebugTaskReceiver", "Failed skill_action=$action", e)
         }
     }
 

@@ -198,7 +198,7 @@ object BuiltInSkills {
         triggerPatterns = listOf("open {app_name}", "launch {app_name}", "start {app_name}"),
         steps = listOf(
             SkillStep("get_screen_info", description = "Check current screen"),
-            SkillStep("launch_app", mapOf("name" to "{app_name}"), description = "Launch the app"),
+            SkillStep("open_app", mapOf("package_name" to "{app_name}"), description = "Launch the app"),
             SkillStep("wait", mapOf("duration_ms" to "3000"), description = "Wait for app to open"),
         ),
         fallbackGoal = "Launch the app named {app_name}."
@@ -248,7 +248,7 @@ object BuiltInSkills {
         parameters = emptyList(),
         triggerPatterns = listOf("screenshot", "capture screen", "take screenshot"),
         steps = listOf(
-            SkillStep("screenshot", description = "Capture screen"),
+            SkillStep("take_screenshot", description = "Capture screen"),
         ),
         fallbackGoal = "Take a screenshot of the current screen."
     )
