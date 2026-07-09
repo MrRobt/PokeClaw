@@ -1,0 +1,392 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>端云系统 · 商业化闭环成熟度体检</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root{
+    --ground:#eef1f3; --panel:#ffffff; --panel-2:#f5f7f8; --sunk:#e9edf0;
+    --ink:#16202b; --body:#33424f; --muted:#6b7885; --faint:#94a2ae;
+    --hair:#dbe2e7; --hair-2:#e7ecef;
+    --signal:#0d8f7f; --signal-bg:#dcefec;
+    --good:#2f8f57; --good-bg:#e0f0e6; --good-line:#7cc79b;
+    --warn:#b8791f; --warn-bg:#f6ecd8; --warn-line:#e0b878;
+    --crit:#c33f34; --crit-bg:#f7e0dd; --crit-line:#e39a92;
+    --shadow:0 1px 2px rgba(20,32,43,.05),0 6px 20px rgba(20,32,43,.06);
+    --mono:ui-monospace,"SF Mono","Cascadia Code",Menlo,Consolas,monospace;
+    --sans:system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",sans-serif;
+  }
+  @media (prefers-color-scheme:dark){
+    :root{
+      --ground:#0e151d; --panel:#161f2a; --panel-2:#1a2531; --sunk:#111a23;
+      --ink:#e8eef3; --body:#c2cdd6; --muted:#8695a2; --faint:#5f6e7b;
+      --hair:#25323f; --hair-2:#202c38;
+      --signal:#2bb3a3; --signal-bg:#0f2c2a;
+      --good:#4bb67a; --good-bg:#12291d; --good-line:#2f6b47;
+      --warn:#e0a13c; --warn-bg:#2c2312; --warn-line:#6d551f;
+      --crit:#e2685c; --crit-bg:#2c1815; --crit-line:#6f342d;
+      --shadow:0 1px 2px rgba(0,0,0,.3),0 8px 26px rgba(0,0,0,.28);
+    }
+  }
+  :root[data-theme="light"]{
+    --ground:#eef1f3; --panel:#ffffff; --panel-2:#f5f7f8; --sunk:#e9edf0;
+    --ink:#16202b; --body:#33424f; --muted:#6b7885; --faint:#94a2ae;
+    --hair:#dbe2e7; --hair-2:#e7ecef;
+    --signal:#0d8f7f; --signal-bg:#dcefec;
+    --good:#2f8f57; --good-bg:#e0f0e6; --good-line:#7cc79b;
+    --warn:#b8791f; --warn-bg:#f6ecd8; --warn-line:#e0b878;
+    --crit:#c33f34; --crit-bg:#f7e0dd; --crit-line:#e39a92;
+    --shadow:0 1px 2px rgba(20,32,43,.05),0 6px 20px rgba(20,32,43,.06);
+  }
+  :root[data-theme="dark"]{
+    --ground:#0e151d; --panel:#161f2a; --panel-2:#1a2531; --sunk:#111a23;
+    --ink:#e8eef3; --body:#c2cdd6; --muted:#8695a2; --faint:#5f6e7b;
+    --hair:#25323f; --hair-2:#202c38;
+    --signal:#2bb3a3; --signal-bg:#0f2c2a;
+    --good:#4bb67a; --good-bg:#12291d; --good-line:#2f6b47;
+    --warn:#e0a13c; --warn-bg:#2c2312; --warn-line:#6d551f;
+    --crit:#e2685c; --crit-bg:#2c1815; --crit-line:#6f342d;
+    --shadow:0 1px 2px rgba(0,0,0,.3),0 8px 26px rgba(0,0,0,.28);
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--ground);color:var(--body);font-family:var(--sans);
+    line-height:1.6;-webkit-font-smoothing:antialiased;font-size:15px}
+  .wrap{max-width:1120px;margin:0 auto;padding:38px 22px 80px}
+  .mono{font-family:var(--mono)}
+  .eyebrow{font-family:var(--mono);font-size:11px;letter-spacing:.16em;text-transform:uppercase;
+    color:var(--signal);font-weight:600}
+  h1{font-size:clamp(26px,4.4vw,40px);line-height:1.12;letter-spacing:-.02em;color:var(--ink);
+    margin:.5rem 0 0;font-weight:750;text-wrap:balance}
+  h2{font-size:19px;letter-spacing:-.01em;color:var(--ink);margin:0;font-weight:700}
+  .lede{font-size:clamp(15px,1.9vw,17px);color:var(--body);max-width:70ch;margin:14px 0 0}
+  .lede b{color:var(--ink);font-weight:650}
+  a{color:var(--signal)}
+
+  /* header */
+  header{border-bottom:1px solid var(--hair);padding-bottom:26px;margin-bottom:30px}
+  .toprow{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap}
+  .stamp{font-family:var(--mono);font-size:11px;color:var(--muted);text-align:right;line-height:1.7;white-space:nowrap}
+  .stamp b{color:var(--body)}
+
+  /* summary counters */
+  .counters{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:24px}
+  .counter{background:var(--panel);border:1px solid var(--hair);border-radius:12px;padding:14px 16px;
+    box-shadow:var(--shadow);position:relative;overflow:hidden}
+  .counter::before{content:"";position:absolute;left:0;top:0;bottom:0;width:4px}
+  .counter.ok::before{background:var(--good)} .counter.weak::before{background:var(--warn)} .counter.gap::before{background:var(--crit)}
+  .counter .n{font-family:var(--mono);font-size:30px;font-weight:700;color:var(--ink);line-height:1;
+    font-variant-numeric:tabular-nums}
+  .counter .k{font-size:12.5px;color:var(--muted);margin-top:6px}
+  .counter .k b{color:var(--body)}
+
+  section{margin-top:44px}
+  .shead{display:flex;align-items:baseline;gap:12px;margin-bottom:16px}
+  .shead .num{font-family:var(--mono);font-size:12px;color:var(--faint);font-weight:600}
+  .sub{color:var(--muted);font-size:13.5px;margin:2px 0 0}
+
+  /* two routes diagram */
+  .board{overflow-x:auto}
+  .routes{display:grid;grid-template-columns:1fr 44px 1fr;gap:0;min-width:680px;align-items:stretch}
+  .route{background:var(--panel);border:1px solid var(--hair);border-radius:14px;padding:16px;box-shadow:var(--shadow)}
+  .route h3{margin:0 0 3px;font-size:15.5px;color:var(--ink);font-weight:700}
+  .route .rtag{font-family:var(--mono);font-size:11px;color:var(--muted);margin-bottom:12px}
+  .flow{display:flex;flex-direction:column;gap:8px}
+  .node{border:1px solid var(--hair);border-radius:9px;padding:9px 11px;background:var(--panel-2);
+    display:flex;gap:9px;align-items:flex-start;font-size:13px;color:var(--body)}
+  .node .dot{width:8px;height:8px;border-radius:50%;margin-top:6px;flex:none}
+  .dot.ok{background:var(--good)} .dot.weak{background:var(--warn)} .dot.gap{background:var(--crit)}
+  .node b{color:var(--ink);font-weight:650}
+  .node .ev{display:block;font-family:var(--mono);font-size:11px;color:var(--muted);margin-top:2px;line-height:1.5}
+  .arrow{color:var(--faint);text-align:center;font-size:12px;margin:-1px 0}
+  .gapcol{display:flex;flex-direction:column;align-items:center;justify-content:center;position:relative}
+  .gapcol .bar{writing-mode:vertical-rl;font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;
+    text-transform:uppercase;color:var(--crit);background:var(--crit-bg);border:1px dashed var(--crit-line);
+    border-radius:20px;padding:14px 5px;font-weight:600}
+
+  /* degradation chain */
+  .chain{display:grid;grid-template-columns:1fr 74px 1fr 74px 1fr;align-items:stretch;min-width:720px}
+  .tier{background:var(--panel);border:1px solid var(--hair);border-radius:14px;padding:15px 15px 14px;
+    box-shadow:var(--shadow);position:relative}
+  .tier.broken{border-style:dashed;border-color:var(--crit-line);background:var(--crit-bg)}
+  .tier .lvl{font-family:var(--mono);font-size:11px;color:var(--faint);font-weight:600}
+  .tier h4{margin:5px 0 8px;font-size:15px;color:var(--ink);font-weight:700}
+  .tier p{margin:0;font-size:12.5px;color:var(--body)}
+  .tier p.ev{font-family:var(--mono);font-size:11px;color:var(--muted);margin-top:7px;line-height:1.55}
+  .conn{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px}
+  .conn .line{height:2px;width:100%;background:var(--good-line)}
+  .conn.dead .line{background:transparent;border-top:2px dashed var(--crit-line)}
+  .conn .lab{font-family:var(--mono);font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;
+    color:var(--muted);text-align:center;line-height:1.3}
+  .conn.dead .lab{color:var(--crit)}
+  .chainnote{margin-top:14px;font-size:13px;color:var(--body);background:var(--panel-2);
+    border:1px solid var(--hair);border-left:3px solid var(--warn);border-radius:0 10px 10px 0;padding:11px 14px}
+  .chainnote b{color:var(--ink)}
+
+  /* maturity matrix */
+  .layer{margin-top:14px}
+  .layer .lname{display:flex;align-items:center;gap:10px;margin:0 0 9px}
+  .layer .lname .tag{font-family:var(--mono);font-size:11px;letter-spacing:.1em;text-transform:uppercase;
+    color:var(--body);font-weight:600}
+  .layer .lname .rule{flex:1;height:1px;background:var(--hair)}
+  .layer .lname .cnt{font-family:var(--mono);font-size:11px;color:var(--faint)}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(248px,1fr));gap:10px}
+  .card{background:var(--panel);border:1px solid var(--hair);border-radius:11px;padding:12px 13px 12px 15px;
+    position:relative;box-shadow:var(--shadow)}
+  .card::before{content:"";position:absolute;left:0;top:10px;bottom:10px;width:3px;border-radius:3px}
+  .card.ok::before{background:var(--good)} .card.weak::before{background:var(--warn)} .card.gap::before{background:var(--crit)}
+  .card .ct{display:flex;justify-content:space-between;align-items:center;gap:8px}
+  .card .name{font-size:13.5px;font-weight:650;color:var(--ink)}
+  .card .ev{font-family:var(--mono);font-size:11px;color:var(--muted);margin-top:5px;line-height:1.5}
+  .pill{font-family:var(--mono);font-size:10px;font-weight:700;letter-spacing:.04em;padding:3px 7px;border-radius:20px;
+    white-space:nowrap;flex:none}
+  .pill.ok{color:var(--good);background:var(--good-bg);border:1px solid var(--good-line)}
+  .pill.weak{color:var(--warn);background:var(--warn-bg);border:1px solid var(--warn-line)}
+  .pill.gap{color:var(--crit);background:var(--crit-bg);border:1px solid var(--crit-line)}
+  .core{font-family:var(--mono);font-size:9px;font-weight:700;color:var(--signal);background:var(--signal-bg);
+    border:1px solid var(--signal);border-radius:4px;padding:1px 4px;margin-left:6px;letter-spacing:.05em;vertical-align:middle}
+
+  /* command holes */
+  .holes{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:12px}
+  .hole{background:var(--panel);border:1px solid var(--hair);border-top:3px solid var(--crit);border-radius:11px;
+    padding:14px 16px;box-shadow:var(--shadow)}
+  .hole h4{margin:0 0 5px;font-size:14.5px;color:var(--ink);font-weight:700;display:flex;gap:8px;align-items:baseline}
+  .hole h4 .hn{font-family:var(--mono);color:var(--crit);font-size:13px}
+  .hole p{margin:0;font-size:12.8px;color:var(--body)}
+  .hole .ev{font-family:var(--mono);font-size:11px;color:var(--muted);margin-top:7px;line-height:1.55}
+
+  /* backlog */
+  .bl{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+  .blcol{background:var(--panel);border:1px solid var(--hair);border-radius:12px;padding:15px 16px;box-shadow:var(--shadow)}
+  .blcol .ph{display:flex;align-items:center;gap:8px;margin-bottom:11px;padding-bottom:10px;border-bottom:1px solid var(--hair)}
+  .blcol .p{font-family:var(--mono);font-weight:700;font-size:12px;padding:2px 8px;border-radius:5px;color:#fff}
+  .p.p0{background:var(--crit)} .p.p1{background:var(--warn)} .p.p2{background:var(--signal)}
+  .blcol .ph .t{font-size:12.5px;color:var(--muted)}
+  .blcol ul{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:9px}
+  .blcol li{font-size:13px;color:var(--body);padding-left:16px;position:relative;line-height:1.5}
+  .blcol li::before{content:"";position:absolute;left:0;top:8px;width:6px;height:6px;border-radius:1px;background:var(--faint)}
+  .blcol li b{color:var(--ink);font-weight:650}
+
+  /* footnote / mine */
+  .mine{margin-top:44px;background:var(--panel-2);border:1px solid var(--hair);border-radius:14px;padding:20px 22px}
+  .mine h2{margin-bottom:8px}
+  .mine p{margin:0 0 10px;font-size:13.5px;color:var(--body);max-width:78ch}
+  .mine p:last-child{margin-bottom:0}
+  .mine .k{font-family:var(--mono);color:var(--signal);font-size:12px}
+  .legend{display:flex;gap:16px;flex-wrap:wrap;margin-top:16px;font-family:var(--mono);font-size:11.5px;color:var(--muted)}
+  .legend span{display:inline-flex;align-items:center;gap:6px}
+  .legend i{width:9px;height:9px;border-radius:50%;display:inline-block}
+  footer{margin-top:40px;padding-top:20px;border-top:1px solid var(--hair);
+    font-family:var(--mono);font-size:11px;color:var(--faint);display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap}
+  @media (max-width:720px){
+    .counters{grid-template-columns:1fr} .bl{grid-template-columns:1fr}
+  }
+</style>
+
+<style>#tg{position:fixed;top:14px;right:14px;z-index:9;font-family:var(--mono);font-size:16px;width:38px;height:38px;border-radius:10px;border:1px solid var(--hair);background:var(--panel);color:var(--body);cursor:pointer;box-shadow:var(--shadow)}#tg:focus-visible{outline:2px solid var(--signal);outline-offset:2px}</style></head>
+<body>
+<button id="tg" aria-label="切换深浅色" title="深 / 浅色">◐</button><div class="wrap">
+  <header>
+    <div class="toprow">
+      <div>
+        <div class="eyebrow">端云系统 · dyq × pokeclaw</div>
+        <h1>商业化闭环成熟度体检</h1>
+      </div>
+      <div class="stamp">
+        证据来源 · <b>三轮代码勘察 + 真机 E3 记录</b><br>
+        判定基准 · <b>读到的实现，非 PRD 叙事</b><br>
+        复核 · <b>2026-07-09</b>
+      </div>
+    </div>
+    <p class="lede"><b>能赚钱的底座（模型网关 · 计费分佣 · 内容生产）和执行手脚（云手机管控 · 端侧 Agent · adb/脚本）大多是真的、能用的。</b>缺口集中在两处：<b>「感知决策大脑」</b>（视觉推理服务是空的）与<b>「模型安全上端」</b>（影子验证 + 晋升门禁缺失）。所以「自主 + 规模化 + 安全迭代」的闭环，还差最关键的这两块没合上。</p>
+
+    <div class="counters">
+      <div class="counter ok"><div class="n">11</div><div class="k"><b>真能用</b> · 有代码/测试/真机证据，可直接支撑</div></div>
+      <div class="counter weak"><div class="n">7</div><div class="k"><b>半成品</b> · 骨架真、差最后一公里或需配置/GPU</div></div>
+      <div class="counter gap"><div class="n">8</div><div class="k"><b>断链 / 缺失</b> · 阻断闭环，多为纸面或模拟</div></div>
+    </div>
+  </header>
+
+  <!-- SECTION 1 — two routes -->
+  <section>
+    <div class="shead"><span class="num">01</span><h2>两条群控路线 · 各跑各的，无统一分派层</h2></div>
+    <p class="sub">control 脚本群控与 claw Agent 群控是两条独立管线：零交叉引用、无统一调度层，<span class="mono">commercialTaskId</span> 只贯穿 claw 侧执行体、不延伸到 control。</p>
+    <div class="board" style="margin-top:14px">
+      <div class="routes">
+        <div class="route">
+          <h3>路线 A · 脚本群控</h3>
+          <div class="rtag mono">dyq-module-control · 一套脚本群控 N 台云手机（自述“替代 prmcontrol 黑盒”）</div>
+          <div class="flow">
+            <div class="node"><span class="dot ok"></span><div><b>cloudphone 触发 → RabbitMQ 派发</b><span class="ev">ControlTaskDispatchConsumer · 按 command 路由</span></div></div>
+            <div class="arrow">↓</div>
+            <div class="node"><span class="dot ok"></span><div><b>脚本引擎 + 真 adb 执行</b><span class="ev">ControlScriptEngine · AdbActionExecutor（真 input tap/swipe）</span></div></div>
+            <div class="arrow">↓</div>
+            <div class="node"><span class="dot gap"></span><div><b>视觉决策 :8081（想智能分支时）</b><span class="ev">ai_decide 骨架已接，但 /multimodal /yolo 服务未实现 → CLI 返回<b style="color:var(--crit)">写死假数据</b></span></div></div>
+          </div>
+        </div>
+        <div class="gapcol"><div class="bar">无统一分派 · 零交叉引用</div></div>
+        <div class="route">
+          <h3>路线 B · 智能 Agent 群控</h3>
+          <div class="rtag mono">dyq-module-claw · 下发任务到指定云手机，端侧接手</div>
+          <div class="flow">
+            <div class="node"><span class="dot ok"></span><div><b>admin / 场景编排触发</b><span class="ev">ClawTaskDispatcher · claw_device_task</span></div></div>
+            <div class="arrow">↓</div>
+            <div class="node"><span class="dot ok"></span><div><b>按任务类型分派执行体</b><span class="ev">executorType: pokeclaw · weflow · cloud_agent · sandbox（真：在线/地区/账号/负载均衡）</span></div></div>
+            <div class="arrow">↓</div>
+            <div class="node"><span class="dot weak"></span><div><b>端侧接手执行 → 降级链</b><span class="ev">见 02 · 端侧「一定处理能力」在云下发路线上偏弱</span></div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- SECTION 2 — degradation chain -->
+  <section>
+    <div class="shead"><span class="num">02</span><h2>三级降级接管链 · 目标是三级，现状是「两级直连、中间断」</h2></div>
+    <p class="sub">你设计的「端侧自主 → 云端大模型接手 → 人工」，核实代码后真正接通的只有两头，中间一级没接进降级流。</p>
+    <div class="board" style="margin-top:14px">
+      <div class="chain">
+        <div class="tier">
+          <div class="lvl mono">TIER ①</div>
+          <h4>端侧自主执行</h4>
+          <p>注册/心跳/领任务/执行/上报闭环已接入生产（flag 门控）。</p>
+          <p class="ev">但云下发用 <b style="color:var(--warn)">确定性 9 技能 SkillExecutor</b>，非真机 E3 那个 LLM AgentLoop → 映射不了即 REJECTED</p>
+        </div>
+        <div class="conn dead"><div class="lab">升级？</div><div class="line"></div><div class="lab" style="color:var(--crit)">未接线</div></div>
+        <div class="tier broken">
+          <div class="lvl mono" style="color:var(--crit)">TIER ② · 缺</div>
+          <h4>云端大模型接手</h4>
+          <p>失败只在<b>原设备重试</b>或直接转人工。</p>
+          <p class="ev">cloud_agent/Hermes 是下发时<b>并行路线</b>非运行时升级目标；ClawLobster 是养成实体<b style="color:var(--crit)">非执行器</b></p>
+        </div>
+        <div class="conn"><div class="lab">FAILED+重试耗尽</div><div class="line"></div><div class="lab">自动转</div></div>
+        <div class="tier">
+          <div class="lvl mono">TIER ③</div>
+          <h4>人工接管</h4>
+          <p>takeover 状态机 + 熔断自动转人工 + admin 三端点，真的。</p>
+          <p class="ev">但通知 MQ <b style="color:var(--warn)">ClawTaskTakeoverMessage 无消费者</b> → 靠人轮询 admin 台</p>
+        </div>
+      </div>
+    </div>
+    <div class="chainnote"><b>端云错误协议还错位：</b>端侧发 <span class="mono">recoverable / suggestedAction</span>，云端结果 VO 只认 <span class="mono">failureType</span>（端侧根本没发）→ 云端退化成对 errorMessage 做<b>关键字猜测</b>，端侧明确的「不可恢复/需接管」信号被丢弃。</div>
+  </section>
+
+  <!-- SECTION 3 — maturity matrix -->
+  <section>
+    <div class="shead"><span class="num">03</span><h2>能力成熟度矩阵</h2></div>
+    <p class="sub">按能力层展开，每格 = 真能用（绿）/ 半成品（黄）/ 断链缺失（红）+ 一句代码证据。<span class="core">核心</span> = 全系统最硬、可直接变现的两块。</p>
+
+    <div class="layer">
+      <div class="lname"><span class="tag">变现底座</span><span class="rule"></span><span class="cnt mono">4 绿</span></div>
+      <div class="grid">
+        <div class="card ok"><div class="ct"><span class="name">AI 多厂商网关<span class="core">核心</span></span><span class="pill ok">真能用</span></div><div class="ev">ai-proxy · 17 家真 HTTP 对接 + key 路由 + 熔断/负载 + 计费 · 52 处真消费</div></div>
+        <div class="card ok"><div class="ct"><span class="name">计费 / 积分 / 分佣<span class="core">核心</span></span><span class="pill ok">真能用</span></div><div class="ev">行级 CAS 原子扣费 + 幂等流水 + 池兜底 + 阶梯分佣 + 结算/提现 job</div></div>
+        <div class="card ok"><div class="ct"><span class="name">AIGC 内容生产</span><span class="pill ok">真能用</span></div><div class="ev">aigc 812 文件 · prompt 全链路 + ComfyUI + GPU 调度 + 合规（局部 TODO）</div></div>
+        <div class="card ok"><div class="ct"><span class="name">AI 编导</span><span class="pill ok">真能用</span></div><div class="ev">director · 真 LLM 脚本/分镜生成 + 工作流编排</div></div>
+      </div>
+    </div>
+
+    <div class="layer">
+      <div class="lname"><span class="tag">执行手脚</span><span class="rule"></span><span class="cnt mono">5 绿</span></div>
+      <div class="grid">
+        <div class="card ok"><div class="ct"><span class="name">云手机机群管控</span><span class="pill ok">真能用</span></div><div class="ev">4 家真厂商 adapter · create/start/stop/control 真 HTTP 下发 + 签名</div></div>
+        <div class="card ok"><div class="ct"><span class="name">端云任务链路（云侧）</span><span class="pill ok">真能用</span></div><div class="ev">register/心跳/原子领任务/HMAC 防重放回传 · 真 DB+MQ+验收测试</div></div>
+        <div class="card ok"><div class="ct"><span class="name">adb 执行 + 脚本引擎</span><span class="pill ok">真能用</span></div><div class="ev">AdbActionExecutor 真 adb · ai_decide「截图→决策→点击」骨架已接</div></div>
+        <div class="card ok"><div class="ct"><span class="name">端侧交互 Agent</span><span class="pill ok">真机 E3</span></div><div class="ev">pokeclaw · LLM 驱动跨 App 任务 + 直连工具 + reliability（真云手机跑通）</div></div>
+        <div class="card ok"><div class="ct"><span class="name">技能自进化</span><span class="pill ok">真能用</span></div><div class="ev">ClawSkillEvolver · 采样失败→LLM 生成新技能→版本化入库</div></div>
+      </div>
+    </div>
+
+    <div class="layer">
+      <div class="lname"><span class="tag">感知决策大脑</span><span class="rule"></span><span class="cnt mono">1 红 · 1 黄</span></div>
+      <div class="grid">
+        <div class="card gap"><div class="ct"><span class="name">视觉推理服务 :8081</span><span class="pill gap">空缺</span></div><div class="ev">/multimodal/decision · /yolo/detect 全仓无实现 · CLI 兜底返回写死假数据</div></div>
+        <div class="card weak"><div class="ct"><span class="name">端侧视觉感知（YOLO）</span><span class="pill weak">燃料在 · 引擎缺</span></div><div class="ev">本次做的 per-software 采集→训→分发飞轮；但端侧 YoloModelBackend = stub（弱标签代 ONNX）</div></div>
+      </div>
+    </div>
+
+    <div class="layer">
+      <div class="lname"><span class="tag">数据 / 模型飞轮</span><span class="rule"></span><span class="cnt mono">1 绿 · 1 黄 · 2 红</span></div>
+      <div class="grid">
+        <div class="card ok"><div class="ct"><span class="name">经验→GRPO→LoRA→策略版本→计费</span><span class="pill ok">真闭环</span></div><div class="ev">claw-training + Java 回调 · 真 PyTorch 代码（生产需 GPU，仓内无跑通产物）</div></div>
+        <div class="card weak"><div class="ct"><span class="name">YOLO 在线训练</span><span class="pill weak">模拟</span></div><div class="ev">claw-yolo-hub training_sim · 按样本量造 map50 · 真训 gated 于 REAL_TRAINER（待实现）</div></div>
+        <div class="card gap"><div class="ct"><span class="name">影子验证 + 晋升门禁</span><span class="pill gap">缺失</span></div><div class="ev">createPolicyVersion 直接置 current · 无影子对比、无质量门禁（YOLO 侧我已加 gate）</div></div>
+        <div class="card gap"><div class="ct"><span class="name">Lobster EVOLVED 生命周期</span><span class="pill gap">纸面</span></div><div class="ev">状态机只到 MATURE · EVOLVED/DORMANT 从不被自动置位</div></div>
+      </div>
+    </div>
+
+    <div class="layer">
+      <div class="lname"><span class="tag">变现自动化</span><span class="rule"></span><span class="cnt mono">2 黄 · 1 红</span></div>
+      <div class="grid">
+        <div class="card weak"><div class="ct"><span class="name">养号 / 发布 / 互动 / 截流</span><span class="pill weak">半成品</span></div><div class="ev">控制面真（安全/计费/记录/编排），执行经云机真达；成体系自动化偏 demo（…DemoFlowTest）</div></div>
+        <div class="card weak"><div class="ct"><span class="name">证据存储</span><span class="pill weak">内存</span></div><div class="ev">claw device 截图证据存 ConcurrentHashMap · 注释直言「实际应用 OSS」</div></div>
+        <div class="card gap"><div class="ct"><span class="name">无人商城「无人」层</span><span class="pill gap">缺失</span></div><div class="ev">mall 955 文件是标准电商中台 · AI 自动运营/选品/上架层基本不存在</div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- SECTION 4 — command holes -->
+  <section>
+    <div class="shead"><span class="num">04</span><h2>命门 · 阻断「自主 + 安全迭代」的关键缺口</h2></div>
+    <div class="holes">
+      <div class="hole"><h4><span class="hn">H1</span>感知决策大脑是空的</h4><p>云手机 /control 是坐标驱动——「该点哪个 (x,y)」没人算。路线 A 的 ai_decide 拿到假决策；端侧路线 B 目前靠无障碍文本、遇自绘/游戏/反无障碍即瞎。</p><p class="ev">→ 把 YOLO 权重跑成实时检测/多模态决策服务，替掉写死数据</p></div>
+      <div class="hole"><h4><span class="hn">H2</span>模型安全上端缺门禁</h4><p>新策略/模型直接置为 current，无影子对比、无质量门禁；飞轮转，但转得不安全，新模型可能直接上端翻车。</p><p class="ev">→ 影子跑达标才晋升（YOLO 侧已有 gate，训练要接真的）</p></div>
+      <div class="hole"><h4><span class="hn">H3</span>降级链中间一级没接</h4><p>「端侧处理不了→云端大模型接手」没接进降级流，直接跳人工；升级信号协议端云对不齐；人工接管通知无消费者。</p><p class="ev">→ 端侧云执行体升级为完整 Agent + 补 escalate 协议 + 接管消费者</p></div>
+      <div class="hole"><h4><span class="hn">H4</span>端云链路真后端 E2E 存疑</h4><p>边界文档说 mock-only/从未真后端验证；另一份材料声称 :48081 E3 往返。两者打架，决定采集数据/任务能不能真打通。</p><p class="ev">→ 一锤定音核实真后端 register→下发→回传全环</p></div>
+    </div>
+  </section>
+
+  <!-- SECTION 5 — backlog -->
+  <section>
+    <div class="shead"><span class="num">05</span><h2>还没做完 · 按优先级</h2></div>
+    <div class="bl">
+      <div class="blcol">
+        <div class="ph"><span class="p p0">P0</span><span class="t">合上闭环必须做</span></div>
+        <ul>
+          <li><b>视觉推理服务 :8081</b> — 把 claw-yolo-hub 权重 + gxe yolo_ui_v0.pt 跑成实时检测/多模态决策</li>
+          <li><b>影子验证 + 晋升门禁</b> — 新模型/策略达标才上端</li>
+          <li><b>端云链路真后端 E2E 核实</b> — mock-only vs E3 一锤定音</li>
+        </ul>
+      </div>
+      <div class="blcol">
+        <div class="ph"><span class="p p1">P1</span><span class="t">YOLO 飞轮 + 降级链收尾</span></div>
+        <ul>
+          <li><b>真 YOLO 端侧推理</b>（接 ONNX/LiteRT，替 stub）</li>
+          <li><b>真训练</b>（接 gxe/ultralytics，去 training_sim）</li>
+          <li><b>降级链补齐</b>：端侧云执行体升级为完整 Agent + escalate 协议 + 接管消费者</li>
+          <li><b>真机整链路 E3</b> + Java 云端 mvn 编译 + App 集成测试测试服务器跑</li>
+          <li><b>远程云手机 Observer</b>（现在只能远程点、不能远程看）+ artifact 接 FileApi</li>
+        </ul>
+      </div>
+      <div class="blcol">
+        <div class="ph"><span class="p p2">P2</span><span class="t">赚钱那端的自动化</span></div>
+        <ul>
+          <li><b>成体系编排</b>：养号→获客→转化闭环（现为 demo）</li>
+          <li><b>无人商城 AI 运营层</b>（选品/上架/定价）</li>
+          <li><b>证据落 OSS</b> + Lobster EVOLVED 生命周期补全</li>
+          <li><b>两条群控路线统一分派</b>（可选，看是否要 A/B 混合调度）</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- mine -->
+  <div class="mine">
+    <h2>本次交付在这张图里的位置</h2>
+    <p>这次做的 <span class="k">per-software YOLO 数据飞轮</span>（App 端 采集→按软件训→分发权重 + dyq Java/Python 双后端）是「<b>感知决策大脑」的燃料管道</b>：让端侧/脚本能按每个软件独立地「看懂」界面元素。但它喂的那个<b>大脑本体——实时推理服务（:8081）——还没造</b>（对应端侧 <span class="k">YoloModelBackend = stub</span>、云端 <span class="k">training_sim = 模拟</span>）。所以离闭环最近、最该接着做的，就是把这条飞轮的权重真正跑起来做检测（P0-H1），并配上安全上端的门禁（P0-H2）。</p>
+    <div class="legend">
+      <span><i style="background:var(--good)"></i>真能用 · 有代码/测试/真机证据</span>
+      <span><i style="background:var(--warn)"></i>半成品 · 差最后一公里 / 需 GPU / 需配置</span>
+      <span><i style="background:var(--crit)"></i>断链缺失 · 阻断闭环</span>
+      <span><i style="background:var(--signal)"></i>连接 / 就绪信号</span>
+    </div>
+  </div>
+
+  <footer>
+    <span>判定基于读到的实现代码，非产品叙事 · 证据级别 E0 走查 → E3 真机</span>
+    <span>dyq × pokeclaw · 闭环体检</span>
+  </footer>
+</div>
+<script>var r=document.documentElement,b=document.getElementById("tg");function cur(){return r.getAttribute("data-theme")||(matchMedia("(prefers-color-scheme:dark)").matches?"dark":"light")}b.onclick=function(){r.setAttribute("data-theme",cur()==="dark"?"light":"dark")};</script>
+</body>
+</html>
