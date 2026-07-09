@@ -12,7 +12,7 @@ import org.json.JSONObject
 import java.util.concurrent.TimeUnit
 
 /**
- * 上传成功/失败经验到云端（POST /api/claw-experience/upload）。
+ * 上传成功/失败经验到云端（POST /api/claw-device/experience）。
  *
  * 策略：
  *  - 成功：success_experience  → commercialTaskId + experienceType + summary + strategyKeywords
@@ -85,7 +85,7 @@ class ExperienceUploader(
     }
 
     private fun send(payload: JSONObject, type: String, callback: (Boolean, String?) -> Unit) {
-        val url = "$baseUrl/api/claw-experience/upload"
+        val url = "$baseUrl/api/claw-device/experience"
         val body = payload.toString().toRequestBody(JSON_MEDIA)
         val requestBuilder = Request.Builder().url(url).post(body)
         getToken()?.let { token ->

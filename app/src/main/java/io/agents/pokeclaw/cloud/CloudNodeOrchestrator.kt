@@ -341,9 +341,48 @@ class CloudNodeOrchestrator(
                 "artifacts=${result.artifacts.size}",
         )
 
+        // 跨设备自进化：任务终态经验上报云端（ExperienceUploader → /api/claw-device/experience，claw_experience 汇聚）
+        reportExperience(task, result)
+
         currentTaskUuid = null
         if (_state == State.EXECUTING) {
             _state = State.RUNNING
+        }
+    }
+
+    /**
+     * 跨设备自进化：把云任务成功/失败经验上报云端（ExperienceUploader → /api/claw-device/experience）。
+     * 让端侧本地自进化经验跨设备汇聚 / 供云端训练。best-effort，异常不影响任务结果上报。
+     */
+    private fun reportExperience(task: PendingTaskItem, result: CloudTaskExecutionResult) {
+        try {
+            val id = deviceId ?: return
+            val token = tokenStore.snapshot()?.deviceToken ?: return
+            val baseUrl = io.agents.pokeclaw.utils.KVUtils.getString("cloud_base_url")
+            if (baseUrl.isBlank()) {
+                return
+            }
+            val uploader = ExperienceUploader(baseUrl, id) { token }
+            if (result.success) {
+                uploader.uploadSuccess(
+                    ExperienceUploader.SuccessExperience(
+                        commercialTaskId = task.taskUuid,
+                        summary = result.message.take(500),
+                    )
+                )
+            } else {
+                uploader.uploadFailure(
+                    ExperienceUploader.FailureExperience(
+                        commercialTaskId = task.taskUuid,
+                        errorCategory = result.errorCode.name,
+                        errorCode = result.errorCode.name,
+                        recoveryHint = result.message.take(500),
+                    )
+                )
+            }
+            XLog.i(TAG, "reportExperience: 自进化经验已上报 taskUuid=${task.taskUuid}, success=${result.success}")
+        } catch (e: Exception) {
+            XLog.w(TAG, "reportExperience: 上报经验异常 taskUuid=${task.taskUuid}", e)
         }
     }
 
