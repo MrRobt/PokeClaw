@@ -67,7 +67,7 @@ class ModelHubClientTest {
     @Test fun downloadReturnsBytes() {
         val bytes = "MODEL-BYTES".toByteArray()
         server.enqueue(MockResponse().setResponseCode(200).setBody(String(bytes)))
-        val f = File.createTempFile("m", ".bin")
+        val f = File.createTempFile("mdl", ".bin")
 
         val out = client.download(server.url("/api/v1/models/mdl_1/download").toString(), f)
 

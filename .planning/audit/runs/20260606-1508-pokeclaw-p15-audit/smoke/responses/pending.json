@@ -1,0 +1,1 @@
+{"code":200,"data":[{"command":"\u6253\u5f00\u8bbe\u7f6e\u67e5\u770b\u7535\u91cf","createdAt":1780732193023,"mode":"TASK","payload":{"action":"open_app","packageName":"com.android.settings"},"priority":"NORMAL","taskUuid":"6dc9b5d7-b730-409f-ac76-a3457568385f","type":"SIMPLE_ACTION","uuid":"6dc9b5d7-b730-409f-ac76-a3457568385f"}],"msg":"success","timestamp":1780732193448}

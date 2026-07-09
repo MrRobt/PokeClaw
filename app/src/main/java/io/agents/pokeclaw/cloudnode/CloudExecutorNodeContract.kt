@@ -88,6 +88,270 @@ data class CloudTaskStatusReport(
 }
 
 /**
+ * 端侧对云端任务请求的本地回执。
+ *
+ * 真实云端恢复前，此结构用于本地状态机、模拟云端响应和离线缓存之间传递稳定字段；
+ * 后续可直接映射为 result 上报或经历上报样本。
+ */
+data class CloudTaskReceipt(
+    val requestId: String,
+    val taskId: String,
+    val deviceId: String,
+    val traceId: String?,
+    val accepted: Boolean,
+    val finalStatus: CloudTaskStatus,
+    val retryable: Boolean,
+    val errorCode: CloudTaskErrorCode = CloudTaskErrorCode.NONE,
+    val message: String? = null,
+    val artifacts: List<String> = emptyList(),
+    val occurredAtMillis: Long,
+) {
+    companion object {
+        fun fromReports(requestId: String, reports: List<CloudTaskStatusReport>): CloudTaskReceipt {
+            require(requestId.isNotBlank()) { "请求编号不能为空" }
+            require(reports.isNotEmpty()) { "状态报告不能为空" }
+            val first = reports.first()
+            val finalReport = reports.last()
+            return CloudTaskReceipt(
+                requestId = requestId,
+                taskId = finalReport.taskId,
+                deviceId = finalReport.deviceId,
+                traceId = finalReport.traceId ?: first.traceId,
+                accepted = reports.any { it.status == CloudTaskStatus.RECEIVED },
+                finalStatus = finalReport.status,
+                retryable = finalReport.retryable,
+                errorCode = finalReport.errorCode,
+                message = finalReport.message,
+                artifacts = finalReport.artifacts,
+                occurredAtMillis = finalReport.occurredAtMillis,
+            )
+        }
+    }
+}
+
+/** 端侧本地重试策略：只负责可重试失败的下一次执行时间计算。 */
+data class CloudTaskRetryPolicy(
+    val maxAttempts: Int = 3,
+    val baseDelayMillis: Long = 1000L,
+    val maxDelayMillis: Long = 30_000L,
+) {
+    fun delayMillis(nextAttempt: Int): Long {
+        val safeAttempt = nextAttempt.coerceAtLeast(1)
+        val multiplier = 1L shl (safeAttempt - 1).coerceAtMost(10)
+        return (baseDelayMillis.coerceAtLeast(0L) * multiplier).coerceAtMost(maxDelayMillis.coerceAtLeast(0L))
+    }
+
+    fun nextPlan(currentAttempt: Int, nowMillis: Long): CloudTaskRetryPlan? {
+        val nextAttempt = currentAttempt + 1
+        if (nextAttempt > maxAttempts.coerceAtLeast(1)) return null
+        val delayMillis = delayMillis(nextAttempt)
+        return CloudTaskRetryPlan(
+            nextAttempt = nextAttempt,
+            nextAttemptAtMillis = nowMillis + delayMillis,
+            delayMillis = delayMillis,
+        )
+    }
+}
+
+/** 本地闭环输出的可重试计划，供调试日志、离线缓存和后续云端调度对齐。 */
+data class CloudTaskRetryPlan(
+    val nextAttempt: Int,
+    val nextAttemptAtMillis: Long,
+    val delayMillis: Long,
+)
+
+/** 离线缓存中的回执事件。 */
+data class CachedCloudTaskReceipt(
+    val requestId: String,
+    val receipt: CloudTaskReceipt,
+    val cachedAtMillis: Long,
+    val retryCount: Int = 0,
+    val nextAttemptAtMillis: Long = cachedAtMillis,
+)
+
+/**
+ * 端侧回执离线缓存。
+ *
+ * 该缓存是纯内存实现，用于 JVM 单测和本地闭环样例；Android 运行时持久化仍由 CloudEventQueue 负责。
+ */
+class CloudTaskOfflineReceiptCache(
+    private val maxSize: Int = 100,
+    private val retryPolicy: CloudTaskRetryPolicy = CloudTaskRetryPolicy(),
+) {
+    private val receipts = linkedMapOf<String, CachedCloudTaskReceipt>()
+
+    fun cache(receipt: CloudTaskReceipt, nowMillis: Long): CachedCloudTaskReceipt {
+        val cached = CachedCloudTaskReceipt(
+            requestId = receipt.requestId,
+            receipt = receipt,
+            cachedAtMillis = nowMillis,
+        )
+        receipts[receipt.requestId] = cached
+        trimToMaxSize()
+        return cached
+    }
+
+    fun dueReceipts(nowMillis: Long): List<CachedCloudTaskReceipt> {
+        return receipts.values
+            .filter { it.nextAttemptAtMillis <= nowMillis }
+            .sortedBy { it.cachedAtMillis }
+    }
+
+    fun markUploadFailed(requestId: String, nowMillis: Long): CachedCloudTaskReceipt? {
+        val existing = receipts[requestId] ?: return null
+        val nextRetryCount = existing.retryCount + 1
+        val updated = existing.copy(
+            retryCount = nextRetryCount,
+            nextAttemptAtMillis = nowMillis + retryPolicy.delayMillis(nextRetryCount),
+        )
+        receipts[requestId] = updated
+        return updated
+    }
+
+    fun markUploaded(requestId: String): Boolean {
+        return receipts.remove(requestId) != null
+    }
+
+    fun size(): Int = receipts.size
+
+    fun clear() {
+        receipts.clear()
+    }
+
+    private fun trimToMaxSize() {
+        val safeMax = maxSize.coerceAtLeast(1)
+        while (receipts.size > safeMax) {
+            val firstKey = receipts.keys.firstOrNull() ?: return
+            receipts.remove(firstKey)
+        }
+    }
+}
+
+/** 本地闭环单次执行结果，包含状态流、回执、离线缓存标记和模拟云端载荷。 */
+data class CloudExecutorLocalRun(
+    val reports: List<CloudTaskStatusReport>,
+    val receipt: CloudTaskReceipt,
+    val cachedForOfflineUpload: Boolean,
+    val retryPlan: CloudTaskRetryPlan?,
+    val mockCloudPayload: Map<String, String>,
+    val experiencePayload: Map<String, String>,
+)
+
+/**
+ * 本地端云闭环执行器。
+ *
+ * 用于真实云端联调恢复前的端侧独立验收：任务接收、状态机推进、回执折叠、
+ * 可重试失败计划、离线上报缓存和模拟云端 payload 全部在本地完成。
+ */
+class CloudExecutorLocalClosedLoop(
+    private val deviceId: String,
+    private val clock: CloudExecutorClock = SystemCloudExecutorClock,
+    val offlineCache: CloudTaskOfflineReceiptCache = CloudTaskOfflineReceiptCache(),
+    private val retryPolicy: CloudTaskRetryPolicy = CloudTaskRetryPolicy(),
+    private val requestIdProvider: () -> String = { "local-${clock.nowMillis()}" },
+) {
+    private val simulator = CloudExecutorNodeSimulator(clock)
+
+    fun execute(
+        taskId: String,
+        instruction: String,
+        traceId: String? = null,
+        timeoutMillis: Long? = null,
+        uploadOnline: Boolean,
+        executor: (CloudExecutorTask) -> CloudTaskExecutionResult,
+    ): CloudExecutorLocalRun {
+        val task = CloudExecutorTask(
+            taskId = taskId,
+            deviceId = deviceId,
+            instruction = instruction,
+            traceId = traceId,
+            issuedAtMillis = clock.nowMillis(),
+            timeoutMillis = timeoutMillis,
+        )
+        val reports = simulator.simulate(task, executor)
+        val receipt = CloudTaskReceipt.fromReports(requestIdProvider(), reports)
+        val nowMillis = receipt.occurredAtMillis
+        val retryPlan = if (!receipt.finalStatus.isSuccess() && receipt.retryable) {
+            retryPolicy.nextPlan(currentAttempt = 0, nowMillis = nowMillis)
+        } else {
+            null
+        }
+        val cached = !uploadOnline
+        if (cached) {
+            offlineCache.cache(receipt, nowMillis)
+        }
+        return CloudExecutorLocalRun(
+            reports = reports,
+            receipt = receipt,
+            cachedForOfflineUpload = cached,
+            retryPlan = retryPlan,
+            mockCloudPayload = receipt.toMockCloudPayload(),
+            experiencePayload = receipt.toExperiencePayload(retryPlan),
+        )
+    }
+
+    private fun CloudTaskStatus.isSuccess(): Boolean = this == CloudTaskStatus.SUCCEEDED
+
+    private fun CloudTaskReceipt.toMockCloudPayload(): Map<String, String> {
+        val status = when (finalStatus) {
+            CloudTaskStatus.SUCCEEDED -> "SUCCESS"
+            CloudTaskStatus.CANCELLED -> "CANCELLED"
+            CloudTaskStatus.RECEIVED, CloudTaskStatus.RUNNING -> "RUNNING"
+            CloudTaskStatus.FAILED -> "FAILED"
+        }
+        return buildMap {
+            put("requestId", requestId)
+            put("taskUuid", taskId)
+            put("deviceId", deviceId)
+            traceId?.let { put("traceId", it) }
+            put("status", status)
+            put("accepted", accepted.toString())
+            put("recoverable", retryable.toString())
+            put("errorCode", errorCode.name)
+            message?.let { put("result", it.take(2048)) }
+            if (artifacts.isNotEmpty()) {
+                put("evidenceRefs", artifacts.joinToString(","))
+            }
+            put("occurredAtMillis", occurredAtMillis.toString())
+        }
+    }
+
+    private fun CloudTaskReceipt.toExperiencePayload(retryPlan: CloudTaskRetryPlan?): Map<String, String> {
+        val outcome = when (finalStatus) {
+            CloudTaskStatus.SUCCEEDED -> "SUCCESS"
+            CloudTaskStatus.CANCELLED -> "CANCELLED"
+            CloudTaskStatus.RECEIVED, CloudTaskStatus.RUNNING -> "RUNNING"
+            CloudTaskStatus.FAILED -> "FAILED"
+        }
+        val lessonType = when {
+            finalStatus == CloudTaskStatus.SUCCEEDED -> "TASK_EXECUTION_SUCCESS"
+            finalStatus == CloudTaskStatus.FAILED && retryable -> "TASK_EXECUTION_RETRYABLE_FAILURE"
+            finalStatus == CloudTaskStatus.FAILED -> "TASK_EXECUTION_FAILURE"
+            else -> "TASK_EXECUTION_STATE"
+        }
+        return buildMap {
+            put("taskUuid", taskId)
+            put("deviceId", deviceId)
+            traceId?.let { put("traceId", it) }
+            put("lessonType", lessonType)
+            put("outcome", outcome)
+            put("summary", message?.take(2048) ?: outcome)
+            put("errorCode", errorCode.name)
+            put("recoverable", retryable.toString())
+            put("occurredAtMillis", occurredAtMillis.toString())
+            if (artifacts.isNotEmpty()) {
+                put("evidenceRefs", artifacts.joinToString(","))
+            }
+            retryPlan?.let {
+                put("retryNextAttempt", it.nextAttempt.toString())
+                put("retryNextAttemptAtMillis", it.nextAttemptAtMillis.toString())
+                put("retryDelayMillis", it.delayMillis.toString())
+            }
+        }
+    }
+}
+
+/**
  * 可替换时钟，保证本地模拟和单元测试不依赖真实时间。
  */
 interface CloudExecutorClock {

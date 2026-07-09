@@ -119,29 +119,80 @@ class TokenManager private constructor(context: Context) {
     }
 
     /**
-     * 保存设备Token
+     * 原子保存 deviceToken 和 refreshToken
+     * 首次注册时必须使用此方法同时保存两个 token
      */
-    fun saveDeviceToken(token: String, expiresInSeconds: Int) {
-        val encrypted = encrypt(token)
+    fun saveTokens(deviceToken: String, refreshToken: String, expiresInSeconds: Int) {
+        require(deviceToken.isNotBlank()) { "设备令牌不能为空" }
+        require(refreshToken.isNotBlank()) { "刷新令牌不能为空" }
+
+        val encryptedDeviceToken = encrypt(deviceToken)
+        val encryptedRefreshToken = encrypt(refreshToken)
         val expiresAt = System.currentTimeMillis() + expiresInSeconds * 1000
+
         prefs.edit {
-            putString(PREFS_KEY_DEVICE_TOKEN, encrypted)
+            putString(PREFS_KEY_DEVICE_TOKEN, encryptedDeviceToken)
+            putString(PREFS_KEY_REFRESH_TOKEN, encryptedRefreshToken)
             putLong(PREFS_KEY_TOKEN_EXPIRES_AT, expiresAt)
         }
-        cachedDeviceToken = token
-        XLog.i(TAG, "DeviceToken 已保存，过期时间: ${expiresInSeconds}s")
+        cachedDeviceToken = deviceToken
+        cachedRefreshToken = refreshToken
+        XLog.i(TAG, "Tokens 已原子保存，过期时间: ${expiresInSeconds}s")
     }
 
     /**
-     * 保存刷新Token
+     * 更新 deviceToken（Token 刷新时使用）
+     * 保留原 refreshToken 不变
+     *
+     * @param deviceToken 新的设备令牌
+     * @param expiresInSeconds 过期时间（秒）
+     * @param nowMillis 当前时间戳（毫秒），用于测试时可注入
+     */
+    fun updateDeviceToken(deviceToken: String, expiresInSeconds: Int, nowMillis: Long = System.currentTimeMillis()) {
+        require(deviceToken.isNotBlank()) { "设备令牌不能为空" }
+        // 必须有历史 refreshToken 才能只更新 deviceToken
+        val existingRefreshToken = getRefreshToken()
+            ?: throw IllegalStateException("更新 deviceToken 前必须先完成注册，调用 saveTokens()")
+
+        val encryptedDeviceToken = encrypt(deviceToken)
+        val expiresAt = nowMillis + expiresInSeconds * 1000
+
+        prefs.edit {
+            putString(PREFS_KEY_DEVICE_TOKEN, encryptedDeviceToken)
+            // 保留原 refreshToken 不变
+            putLong(PREFS_KEY_TOKEN_EXPIRES_AT, expiresAt)
+        }
+        cachedDeviceToken = deviceToken
+        XLog.i(TAG, "DeviceToken 已更新（refreshToken 保持不变），过期时间: ${expiresInSeconds}s")
+    }
+
+    /**
+     * 保存设备Token（兼容方法，有历史记录时保留原 refreshToken）
+     * 注意：首次注册时必须使用 saveTokens()
+     */
+    fun saveDeviceToken(token: String, expiresInSeconds: Int) {
+        val existingRefreshToken = getRefreshToken()
+        if (existingRefreshToken == null) {
+            throw IllegalStateException("首次保存令牌时必须使用 saveTokens(deviceToken, refreshToken, ...) 同时保存两个令牌")
+        }
+        // 有历史记录时，使用原子保存（保留原 refreshToken）
+        saveTokens(token, existingRefreshToken, expiresInSeconds)
+    }
+
+    /**
+     * 保存刷新Token（兼容方法，有历史记录时保留原 deviceToken）
+     * 注意：首次注册时必须使用 saveTokens()
      */
     fun saveRefreshToken(token: String) {
-        val encrypted = encrypt(token)
-        prefs.edit {
-            putString(PREFS_KEY_REFRESH_TOKEN, encrypted)
+        val existingDeviceToken = getDeviceToken()
+        val expiresAt = prefs.getLong(PREFS_KEY_TOKEN_EXPIRES_AT, 0)
+        val expiresInSeconds = ((expiresAt - System.currentTimeMillis()) / 1000).toInt().coerceAtLeast(0)
+
+        if (existingDeviceToken == null) {
+            throw IllegalStateException("首次保存令牌时必须使用 saveTokens(deviceToken, refreshToken, ...) 同时保存两个令牌")
         }
-        cachedRefreshToken = token
-        XLog.i(TAG, "RefreshToken 已保存")
+        // 有历史记录时，使用原子保存（保留原 deviceToken）
+        saveTokens(existingDeviceToken, token, expiresInSeconds)
     }
 
     /**

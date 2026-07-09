@@ -1,0 +1,28 @@
+[INFO] 输出目录: .planning/audit/runs/20260606-1806-pokeclaw-p15-tdd-sketch
+[INFO] BASE_URL: http://127.0.0.1:18511
+[INFO] mock 后端已启动, pid=1472147
+[PASS] 健康检查通过
+[HTTP] register => 200
+[PASS] register HTTP=200
+[PASS] register body.code 命中允许值=0,200（实际=200）
+[PASS] 注册返回 deviceToken
+[HTTP] heartbeat => 200
+[PASS] heartbeat HTTP=200
+[PASS] heartbeat body.code 命中允许值=0,200（实际=200）
+[INFO] pendingTaskCount=1
+[HTTP] pending => 200
+[PASS] pending HTTP=200
+[PASS] pending body.code 命中允许值=0,200（实际=200）
+[PASS] 拉取到任务 taskUuid=6fe2f763-ac36-4f7c-b43d-05ed10327917
+[HTTP] result => 200
+[PASS] result HTTP=200
+[PASS] result body.code 命中允许值=0,200（实际=200）
+[PASS] 任务结果已回传 taskUuid=6fe2f763-ac36-4f7c-b43d-05ed10327917
+[HTTP] heartbeat_no_token => 200
+[PASS] heartbeat_no_token HTTP=200
+[PASS] 无token报错可见: code=401, msg=缺少有效令牌
+[HTTP] heartbeat_bad_token => 200
+[PASS] heartbeat_bad_token HTTP=200
+[PASS] 无效token报错可见: code=401, msg=令牌无效
+[PASS] 网络断连异常已触发: exit=7
+[DONE] 冒烟完成，证据见: .planning/audit/runs/20260606-1806-pokeclaw-p15-tdd-sketch

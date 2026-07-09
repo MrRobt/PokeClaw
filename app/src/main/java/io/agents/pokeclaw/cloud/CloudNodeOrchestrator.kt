@@ -330,6 +330,7 @@ class CloudNodeOrchestrator(
             errorDetail = errorDetail?.detail,
             recoverable = errorDetail?.recoverable,
             suggestedAction = errorDetail?.suggestedAction,
+            logSnippet = buildResultLogSnippet(task, result, executionTimeMs),
         )
 
         // 上报（Result 语义：成功 / 失败 / 离线入队 由 RetrofitDeviceCloudClient 内部处理）
@@ -393,6 +394,23 @@ class CloudNodeOrchestrator(
             result.retryable -> TaskResultRequest.Status.FAILED
             else -> TaskResultRequest.Status.FAILED
         }
+    }
+
+    private fun buildResultLogSnippet(
+        task: PendingTaskItem,
+        result: CloudTaskExecutionResult,
+        executionTimeMs: Long,
+    ): String {
+        return buildString {
+            append("taskUuid=").append(task.taskUuid)
+            append(" status=").append(if (result.success) "SUCCESS" else "FAILED")
+            append(" durationMs=").append(executionTimeMs)
+            append(" errorCode=").append(result.errorCode.name)
+            if (result.artifacts.isNotEmpty()) {
+                append(" artifacts=").append(result.artifacts.joinToString(",").take(512))
+            }
+            append(" message=").append(result.message.take(512))
+        }.take(1024)
     }
 
     /**

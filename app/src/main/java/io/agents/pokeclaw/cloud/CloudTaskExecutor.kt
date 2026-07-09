@@ -187,7 +187,17 @@ class LocalAgentTaskExecutor(
      * 终态在 agent 执行线程回调 → 幂等 resume；取消 → stopTask。
      */
     private suspend fun runAgentLoopFallback(task: PendingTaskItem): CloudTaskExecutionResult {
-        val vm = ClawApplication.appViewModelInstance
+        val vm = try {
+            ClawApplication.appViewModelInstance
+        } catch (e: IllegalStateException) {
+            XLog.w(TAG, "runAgentLoopFallback: app 宿主未初始化,taskUuid=${task.taskUuid}", e)
+            return CloudTaskExecutionResult.failure(
+                message = "agent loop 不可用: ${e.message}",
+                errorCode = CloudTaskErrorCode.TASK_REJECTED,
+                retryable = false,
+                artifacts = listOf("taskUuid:${task.taskUuid}", "agent_loop:false"),
+            )
+        }
         if (vm.isTaskRunning()) {
             return CloudTaskExecutionResult.failure(
                 message = "设备正忙：已有 PokeClaw 任务在执行",

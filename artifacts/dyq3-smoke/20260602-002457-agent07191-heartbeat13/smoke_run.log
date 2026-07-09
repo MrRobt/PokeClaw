@@ -1,0 +1,24 @@
+[INFO] 输出目录: artifacts/dyq3-smoke/20260602-002457-agent07191-heartbeat13
+[INFO] BASE_URL: http://127.0.0.1:18102
+[INFO] mock 后端已启动, pid=7719
+[PASS] 健康检查通过
+[HTTP] register => 200
+[PASS] register HTTP=200
+[PASS] 注册返回 deviceToken
+[HTTP] heartbeat => 200
+[PASS] heartbeat HTTP=200
+[INFO] pendingTaskCount=1
+[HTTP] pending => 200
+[PASS] pending HTTP=200
+[PASS] 拉取到任务 taskUuid=07d85f61-f58f-4b49-927e-11f1176a738f
+[HTTP] result => 200
+[PASS] result HTTP=200
+[PASS] 任务结果已回传 taskUuid=07d85f61-f58f-4b49-927e-11f1176a738f
+[HTTP] heartbeat_no_token => 200
+[PASS] heartbeat_no_token HTTP=200
+[PASS] 无token报错可见: code=401, msg=缺少有效令牌
+[HTTP] heartbeat_bad_token => 200
+[PASS] heartbeat_bad_token HTTP=200
+[PASS] 无效token报错可见: code=401, msg=令牌无效
+[PASS] 网络断连异常已触发: exit=7
+[DONE] 冒烟完成，证据见: artifacts/dyq3-smoke/20260602-002457-agent07191-heartbeat13

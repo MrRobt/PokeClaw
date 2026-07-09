@@ -1,0 +1,10 @@
+===== ADB 最小验证 =====
+2026-06-02 00:25:10 +0800
+* daemon not running; starting now at tcp:5037
+* daemon started successfully
+--- adb devices -l ---
+List of devices attached
+
+--- adb shell getprop ro.product.model (若无设备会失败) ---
+adb: no devices/emulators found
+adb shell exitCode=1
