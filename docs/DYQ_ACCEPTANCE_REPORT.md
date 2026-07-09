@@ -4,6 +4,8 @@
 > 证据级别 **E3 = 真 app 运行时 + 真 dyq 后端往返**(非 curl 模拟)。
 >
 > ⚠️ **校正(2026-07-09)**:本矩阵中涉及 **P0-1(agent-loop 兜底)/ P0-2(远程下发 skill)** 的「E3 通过」为**当时对未落编译环境的新增端侧代码的过度声明**——本仓库无 Android 编译环境(本地 OOM、测试服无 SDK、emulator 跑的是旧包 v0.7.2),这两项**无法在设备上真运行**。现降级为 **「源码+符号核实(compile-consistent)」**;device 级 E3 待具备编译环境后补(见 `QA_CHECKLIST` / `BACKLOG`)。矩阵其余行(管道闭环 / bug 链 / STUB 状态)基于 emulator 上**已装旧包**的真实行为,维持 E3。
+>
+> ✅ **更新(2026-07-09 晚):device-E3 已达成** —— "无编译环境"是误判,测试服有 64GB + `/root/android-sdk`。已真编译 APK(`assembleDirectDebug` BUILD SUCCESSFUL,含 compile+dex+R8)→ 装机 emulator → ADB 注入 dyq 任务真跑:**P0-2 端到端 SUCCESS**(`install_skill:`→`SkillRegistry 13→14`→dyq SUCCESS);**P0-1 路由+240s 超时兜底 verified**(map-miss→agent-loop 非 TASK_REJECTED;stall 时超时兜底回传 FAILED+retryable,无死锁)。故 P0-1/P0-2 **恢复 device-E3**。次要发现:端侧 agent loop round-1 LLM 快速失败未走 onError(靠超时兜底,BACKLOG P2)。
 
 ## 1. 测试环境
 
@@ -27,7 +29,7 @@ emulator 入网就绪证据:`initCloudNode: baseUrl=http://192.168.250.3:48081` 
 | 5 | **本地任务执行**(3 层路由) | ✅ 通过 | direct-tool:`battery` → `rounds=0, model=direct, answer=Battery: 100%`;agent-loop:复合任务 → `onLoopStart: round=1`(到 Tier-3) |
 | 6 | **云任务执行(引擎)** | ⚠️ **受限但已跑通** | 修复后 **E3 成功**:dyq 下发 `open Settings` → 拉取 → `open_app(package_name=Settings)` → `Resolved 'Settings'→'com.android.settings'` → **前台真打开 Settings** → 回传 `status=SUCCESS`。**但**:①只走 9 个确定性 skill;②映射不到即 `TASK_REJECTED`,**无 agent-loop(MiniMax)兜底**;③`model=local-skill-executor`;④第 4 个 bug:`CloudTaskSkillMapper` 把"the Settings app"整短语当 app 名(仅干净名如"Settings"可解析) |
 | 7 | skill 缺陷(**连环 bug**) | 🐛→✅ **已修** | `launch_app` skill 三处错:①工具名 `launch_app`→`open_app` ②参数键 `name`→`package_name`(OpenAppTool 声明必填 `package_name`,execute 内 `resolveAppName` 把名字解析成包名);`screenshot` skill 工具名 `screenshot`→`take_screenshot`。**每个 bug 都在首次 E3 运行时立刻暴露 → 云 skill 执行路径此前从未端到端测过**。已修 `BuiltInSkills.kt` |
-| 8 | **加载远程下发安装的 skill** | ✅ 代码接线+符号核实(P0-2);⚠️ device-E3 待编译 | 经**设备任务通道**下发 `install_skill:<JSON>` → `LocalAgentTaskExecutor` 解析定义 → `RemoteSkillInstaller.parseSkillDefinition` → `SkillRegistry.register`(注入,13→14)→ 回传 SUCCESS;随后本地任务命中该 skill 的 trigger → SkillExecutor 跑 remote_demo(open_app Settings)→ **真打开 Settings**。⚠️ 注:lobster `app-api` marketplace 走不通(需 yudao **用户登录**、device token 得 401「账号未登录」;且 skill/list **仅元数据**,可执行体 `prompt_template` 只服务端 Hermes 用),故设备侧走**任务通道**下发 skill 定义(faithful「远程下发」)。持久化:当前进程内有效,落盘重放留 P1 |
+| 8 | **加载远程下发安装的 skill** | ✅ **device-E3 PASS(P0-2)** | 经**设备任务通道**下发 `install_skill:<JSON>` → `LocalAgentTaskExecutor` 解析定义 → `RemoteSkillInstaller.parseSkillDefinition` → `SkillRegistry.register`(注入,13→14)→ 回传 SUCCESS;随后本地任务命中该 skill 的 trigger → SkillExecutor 跑 remote_demo(open_app Settings)→ **真打开 Settings**。⚠️ 注:lobster `app-api` marketplace 走不通(需 yudao **用户登录**、device token 得 401「账号未登录」;且 skill/list **仅元数据**,可执行体 `prompt_template` 只服务端 Hermes 用),故设备侧走**任务通道**下发 skill 定义(faithful「远程下发」)。持久化:当前进程内有效,落盘重放留 P1 |
 | 9 | 云端经验上报(跨设备自进化) | ❌ STUB | `ExperienceUploader` / `CloudApprovalReporter` 运行时零调用 —— 自进化只在本地、不回传 dyq |
 | 10 | base-URL 兜底 | 🐛 | `ClawApplication.kt:184` 硬编码兜底 `http://192.168.250.3:8080`(实为 OpenSandbox,非 dyq)。已用 KV `cloud_base_url` + 重启绕过 |
 
