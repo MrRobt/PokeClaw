@@ -50,7 +50,9 @@ Priority: `P0` = blocks users, fix now. `P1` = next up. `P2` = when we get to it
 - [ ] **P2** Remote observation: decode the cloud-phone screen-wall stream so `CloudPhoneActuator` gets a matching `DeviceObserver` (remote explore, not just remote control)
 - [x] ~~**P1** Java `dyq-module-claw` YOLO 模型中心~~ — 2026-07-08 直接 Java 实现（非 proxy，逻辑等价 Python hub）：4 DO + 4 Mapper + `YoloHubService[Impl]` + `YoloDeviceController`(`/api/v1`,@PermitAll) + snake-case VO + `ClawYoloAuthorizeRequestsCustomizer` + SQL。codex 二审 + 独立复核**零编译错误**。已修 3 个真 bug：①多租户 NPE（4 张 YOLO 表加入 `dyq-server`/`-cloudphone`/`-hermes`/`-aigc-publish` 的 `tenant.ignore-tables`，否则设备端无租户上下文首调即 500 静默失败）②App `TrainingJobDto.metrics` 类型（`Map<String,Double>`→`Map<String,Any?>`，否则 `"simulated":true` 布尔令 Gson 抛异常静默返回 null）③`uploadSamples` 空 batch 判空。**待测试服务器 `mvn` 编译确认**。
 - [ ] **P3** (dyq 历史遗留，codex 发现，与本次 YOLO 无关) 其它 server 变体的 `tenant.ignore-tables` 缺 `claw_device*` 三表豁免，设备端 `/api/claw-device/**` 有同样 NPE 风险——需确认哪些 binary 承接设备流量后统一补
-- [ ] **P2** On-device E2E (E3) for the whole loop on a real cloud phone: identify→resolve→detect→explore→collect→upload→train→promote→update (blocked here: no adb/device in sandbox)
+- [x] ~~**P1** 端云链路真后端 E2E 核实(H4)~~ — 2026-07-09 **E3 通过**（测试环境 dyq `:48081`：register/心跳/领任务/HMAC 回传全环 + 坏签名 401001 被拒）。脚本 `dyq-module-claw/scripts/verify_device_e2e.py`。证伪 `CLOUD_SUBSYSTEM_BOUNDARY.md` 的 mock-only。
+- [ ] **P2** (H4 发现) dyq `submitTaskResult` 对不存在 taskUuid 返回 HTTP200 code=500「系统异常」→ 应返回明确「任务不存在」错误码，别抛到全局兜底
+- [ ] **P1** On-device 整链路 E3（测试环境 `pokeclaw-test` 已具备条件：android `emulator-5554` adb + dyq `:48081` + control `vision-engine :8081`）：identify→resolve→detect→explore→collect→upload→train→promote→update
 
 ## QA Gaps
 

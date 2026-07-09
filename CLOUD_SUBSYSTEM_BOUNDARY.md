@@ -2,6 +2,8 @@
 
 Status: **quarantined / unverified** · Owner: **TBD** · Last audited: 2026-07-07
 
+> **更新 2026-07-09（H4）**：端云链路已在**真 dyq 后端**（测试环境 `dyq-server-full-test` `:48081`，mysql+redis+rabbitmq 齐）**E2E 验证真通** —— register→HTTP200 拿 deviceToken、heartbeat、pending-tasks 全 200，submitResult HMAC 签名通过 filter（signing_string / HMAC-SHA256(deviceToken) 端云一致），坏签名 401001 被拒。见 QA `H4-ENDCLOUD-E2E-E3`、脚本 `../dyq/dyq-module-claw/scripts/verify_device_e2e.py`。本文下方「从未真后端验证 / mock-only / E1」的**网络链路结论已被证伪**；仍需守的是「`cloud_enabled` 默认关闭」等产品不变量。
+
 This document draws an explicit boundary around the on-device **cloud / edge-cloud
 ("端云") subsystem** that ships inside the PokeClaw APK. It exists because that
 subsystem is large, is **not mentioned at all** in `ARCHITECTURE_RECONSTRUCTION.md`,
