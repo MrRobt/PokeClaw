@@ -10,6 +10,9 @@ import androidx.compose.runtime.snapshots.SnapshotStateList
 import dev.langchain4j.data.message.AiMessage
 import dev.langchain4j.data.message.SystemMessage
 import dev.langchain4j.data.message.UserMessage
+import io.agents.pokeclaw.ExecutionEventKind
+import io.agents.pokeclaw.ExecutionEventSource
+import io.agents.pokeclaw.ExecutionEventStore
 import io.agents.pokeclaw.agent.ModelPricing
 import io.agents.pokeclaw.agent.llm.LlmClient
 import io.agents.pokeclaw.agent.llm.LlmSessionManager
@@ -27,6 +30,7 @@ import java.util.concurrent.ExecutorService
 
 data class ChatSessionUiState(
     val messages: SnapshotStateList<ChatMessage>,
+    val executionEvents: ExecutionEventStore,
     val modelStatus: MutableState<String>,
     val isAwaitingReply: MutableState<Boolean>,
     val inputEnabled: MutableState<Boolean>,
@@ -615,12 +619,23 @@ class ChatSessionController(
         uiState.messages.add(ChatMessage(ChatMessage.Role.USER, text))
     }
 
-    private fun addSystem(text: String) {
+    private fun addSystem(text: String, persistInHistory: Boolean = false) {
+        uiState.executionEvents.record(
+            source = ExecutionEventSource.MODEL,
+            kind = ExecutionEventKind.STATUS,
+            message = text,
+        )
         val last = uiState.messages.lastOrNull()
         if (last?.role == ChatMessage.Role.SYSTEM && last.content.equals(text, ignoreCase = true)) {
             return
         }
-        uiState.messages.add(ChatMessage(ChatMessage.Role.SYSTEM, text))
+        uiState.messages.add(
+            ChatMessage(
+                role = ChatMessage.Role.SYSTEM,
+                content = text,
+                persistInHistory = persistInHistory,
+            )
+        )
     }
 
     private fun updateLocalModelStatus(modelPath: String?) {
