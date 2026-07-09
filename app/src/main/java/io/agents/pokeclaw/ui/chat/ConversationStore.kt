@@ -16,6 +16,8 @@ class ConversationStore(
 ) {
 
     companion object {
+        private const val CURRENT_CONVERSATION_ID_KEY = "CURRENT_CONVERSATION_ID"
+
         private fun newConversationId(): String = "chat_${System.currentTimeMillis()}"
     }
 
@@ -25,7 +27,7 @@ class ConversationStore(
         val conversations: List<ChatHistoryManager.ConversationSummary>
     )
 
-    var currentConversationId: String = KVUtils.getCurrentConversationId()
+    var currentConversationId: String = KVUtils.getString(CURRENT_CONVERSATION_ID_KEY, "")
         .takeIf { it.isNotEmpty() }
         ?: newConversationId()
         private set
@@ -91,6 +93,6 @@ class ConversationStore(
     }
 
     private fun persistCurrentConversationId() {
-        KVUtils.setCurrentConversationId(currentConversationId)
+        KVUtils.putString(CURRENT_CONVERSATION_ID_KEY, currentConversationId)
     }
 }

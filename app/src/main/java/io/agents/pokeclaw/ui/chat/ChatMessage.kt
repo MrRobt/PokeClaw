@@ -8,8 +8,7 @@ data class ChatMessage(
     val content: String,
     val timestamp: Long = System.currentTimeMillis(),
     val toolSteps: List<ToolStep>? = null,
-    val modelName: String? = null,
-    val persistInHistory: Boolean = true,
+    val modelName: String? = null
 ) {
     enum class Role { USER, ASSISTANT, SYSTEM, TOOL_GROUP }
 }

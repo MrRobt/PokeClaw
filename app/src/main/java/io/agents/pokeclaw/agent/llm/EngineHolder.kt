@@ -77,7 +77,7 @@ object EngineHolder {
             val newEngine = Engine(engineConfig).also { it.initialize() }
             if (backend is Backend.GPU) {
                 LocalBackendHealth.markGpuInitFinished()
-                LocalBackendHealth.noteGpuEngineInitSuccess(modelPath)
+                LocalBackendHealth.noteGpuInitSuccess(modelPath)
             }
             engine = newEngine
             currentModelPath = modelPath

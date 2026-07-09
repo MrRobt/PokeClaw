@@ -54,13 +54,12 @@ object ChatHistoryManager {
      * Save a conversation to markdown file.
      */
     fun save(context: Context, conversationId: String, messages: List<ChatMessage>, model: String) {
-        val persistedMessages = messages.filter { it.persistInHistory }
-        if (persistedMessages.isEmpty()) return
+        if (messages.isEmpty()) return
 
         // Generate title from first user message
-        val firstUserMsg = persistedMessages.firstOrNull { it.role == ChatMessage.Role.USER }
+        val firstUserMsg = messages.firstOrNull { it.role == ChatMessage.Role.USER }
         val title = firstUserMsg?.content?.take(50)?.replace(Regex("[^a-zA-Z0-9\\s]"), "")?.trim()?.replace("\\s+".toRegex(), "-")?.lowercase() ?: "untitled"
-        val dateStr = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date(persistedMessages.first().timestamp))
+        val dateStr = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date(messages.first().timestamp))
         val fileName = "$dateStr-$title.md"
 
         val file = File(getChatDir(context), fileName)
@@ -70,13 +69,13 @@ object ChatHistoryManager {
         sb.appendLine("---")
         sb.appendLine("id: $conversationId")
         sb.appendLine("title: ${firstUserMsg?.content?.take(80) ?: "Untitled"}")
-        sb.appendLine("created: ${SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.US).format(Date(persistedMessages.first().timestamp))}")
+        sb.appendLine("created: ${SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.US).format(Date(messages.first().timestamp))}")
         sb.appendLine("model: $model")
         sb.appendLine("---")
         sb.appendLine()
 
         // Messages
-        persistedMessages.forEach { msg ->
+        messages.forEach { msg ->
             when (msg.role) {
                 ChatMessage.Role.USER -> {
                     sb.appendLine("## User")
@@ -119,10 +118,10 @@ object ChatHistoryManager {
             ChatDatabase(context).indexConversation(
                 id = conversationId,
                 title = firstUserMsg?.content?.take(80) ?: "Untitled",
-                created = persistedMessages.first().timestamp,
+                created = messages.first().timestamp,
                 model = model,
                 filePath = file.absolutePath,
-                messages = persistedMessages
+                messages = messages
             )
         } catch (_: Exception) { /* index failure is non-fatal */ }
     }
@@ -295,43 +294,4 @@ object ChatHistoryManager {
      * Delete a conversation.
      */
     fun delete(file: File): Boolean = file.delete()
-
-    fun appendMessage(
-        context: Context,
-        conversationId: String,
-        message: ChatMessage,
-        modelHint: String = "Background automation",
-    ) {
-        if (conversationId.isBlank()) return
-
-        val existingFile = listConversations(context).firstOrNull { it.id == conversationId }?.file
-        val existingMessages = existingFile?.let { load(it) } ?: emptyList()
-        val existingModel = existingFile?.let { readFrontmatterValue(it, "model") }.orEmpty()
-        save(
-            context = context,
-            conversationId = conversationId,
-            messages = existingMessages + message,
-            model = existingModel.ifBlank { modelHint }
-        )
-    }
-
-    private fun readFrontmatterValue(file: File, key: String): String {
-        if (!file.exists()) return ""
-        file.useLines { lines ->
-            var inFm = false
-            for (line in lines) {
-                if (line == "---") {
-                    if (!inFm) {
-                        inFm = true
-                        continue
-                    }
-                    break
-                }
-                if (inFm && line.startsWith("$key: ")) {
-                    return line.removePrefix("$key: ").trim()
-                }
-            }
-        }
-        return ""
-    }
 }

@@ -78,7 +78,6 @@ class ComposeChatActivity : ComponentActivity() {
             executor = executor,
             uiState = ChatSessionUiState(
                 messages = _messages,
-                executionEvents = appViewModel.executionEventStore,
                 modelStatus = _modelStatus,
                 isAwaitingReply = _isAwaitingReply,
                 inputEnabled = _inputEnabled,
@@ -102,7 +101,6 @@ class ComposeChatActivity : ComponentActivity() {
             currentConversationId = { conversationStore.currentConversationId },
             uiState = TaskFlowUiState(
                 messages = _messages,
-                executionEvents = appViewModel.executionEventStore,
                 modelStatus = _modelStatus,
                 isAwaitingReply = _isAwaitingReply,
                 isTaskRunning = _isTaskRunning,
@@ -493,7 +491,6 @@ class ComposeChatActivity : ComponentActivity() {
         val session = conversationStore.startNewConversation(_messages, currentConversationModelName())
         syncSidebar(session.conversations)
         _messages.clear()
-        appViewModel.executionEventStore.clear()
         _sessionTokens.value = 0
         _sessionCost.value = 0.0
         _isAwaitingReply.value = false
@@ -506,7 +503,6 @@ class ComposeChatActivity : ComponentActivity() {
         syncSidebar(session.conversations)
         _messages.clear()
         _messages.addAll(session.messages)
-        appViewModel.executionEventStore.clear()
         _isAwaitingReply.value = false
         _isTaskRunning.value = false
         chatSessionController.restoreConversationRuntime(session.conversationId, session.messages)
