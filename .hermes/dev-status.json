@@ -1,0 +1,50 @@
+{
+  "project": "PokeClaw",
+  "branch": "hermes",
+  "last_dev_time": "2026-05-20T02:00:00",
+  "dev_agent": "hermes-kimi-k2.5",
+  "modules": {
+    "agent": {
+      "status": "active",
+      "files": 45
+    },
+    "llm": {
+      "status": "active",
+      "files": 12
+    },
+    "ui": {
+      "status": "active",
+      "files": 35
+    },
+    "cloud": {
+      "status": "active",
+      "files": 19
+    },
+    "device": {
+      "status": "integrating",
+      "files": 22
+    }
+  },
+  "cloud_components": [
+    "CloudHeartbeatManager - 云端心跳管理",
+    "CloudAgentService - 云端Agent服务",
+    "TaskPoller - 任务轮询器",
+    "CloudTaskExecutor - 云任务执行器",
+    "CloudNodeOrchestrator - 云端节点编排",
+    "DeviceService - 设备服务"
+  ],
+  "total_source_files": 207,
+  "build_status": "ready",
+  "completed_tasks": [
+    "✅ 完善CloudHeartbeatManager",
+    "✅ 添加TaskPoller任务轮询器",
+    "✅ 完善端云集成架构",
+    "✅ 优化错误处理机制",
+    "✅ 创建CloudTaskExecutor云任务执行器"
+  ],
+  "next_tasks": [
+    "测试端云任务下发流程",
+    "完善AgentService与执行器集成",
+    "添加任务执行结果回传验证"
+  ]
+}
