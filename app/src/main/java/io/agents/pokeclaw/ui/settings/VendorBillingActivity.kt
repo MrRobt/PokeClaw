@@ -12,8 +12,16 @@ import android.widget.ListView
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import androidx.lifecycle.lifecycleScope
+import io.agents.pokeclaw.ClawApplication
 import io.agents.pokeclaw.R
+import io.agents.pokeclaw.cloud.CloudClientFactory
+import io.agents.pokeclaw.cloud.lobster.client.BillingPricingClient
+import io.agents.pokeclaw.utils.KVUtils
 import io.agents.pokeclaw.utils.XLog
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * Lists the 4 [VendorBillingEntry] rows
@@ -21,6 +29,11 @@ import io.agents.pokeclaw.utils.XLog
  * display name + status label (CONFIGURED / PLACEHOLDER / UNKNOWN).
  * Tapping a row toasts a "go to dyq backend" message — there's no
  * client-side configuration to edit yet.
+ *
+ * V1.0 改造：
+ *  - onCreate 启动时通过 [BillingPricingClient] 拉取 dyq 真实定价
+ *  - 拉取成功 → [VendorBillingRegistry.loadFromResp] 覆盖 SEED
+ *  - 拉取失败/网络异常 → 回退 SEED + toast 提示
  */
 class VendorBillingActivity : AppCompatActivity() {
 
@@ -39,10 +52,7 @@ class VendorBillingActivity : AppCompatActivity() {
         title = getString(R.string.settings_billing_group_title)
 
         listView = findViewById(R.id.lv_vendor_billing)
-        val entries = VendorBillingRegistry.all()
-        XLog.i(TAG, "vendor-billing: listed ${entries.size} entries")
-
-        adapter = VendorAdapter(this, entries)
+        adapter = VendorAdapter(this, VendorBillingRegistry.all())
         listView.adapter = adapter
         listView.setOnItemClickListener { _, _, position, _ ->
             val entry = adapter.getItem(position) ?: return@setOnItemClickListener
@@ -52,11 +62,61 @@ class VendorBillingActivity : AppCompatActivity() {
             )
             Toast.makeText(this, TOAST_BACKEND_HINT, Toast.LENGTH_LONG).show()
         }
+
+        // V1.0：从 dyq 拉取真实定价
+        loadFromCloud()
     }
 
     override fun onResume() {
         super.onResume()
         adapter.replaceAll(VendorBillingRegistry.all())
+    }
+
+    private fun loadFromCloud() {
+        val baseUrl = KVUtils.getDefaultCloudBaseUrl().takeIf { it.isNotBlank() }
+        if (baseUrl == null) {
+            XLog.d(TAG, "loadFromCloud: baseUrl 未配置，使用 SEED 兜底")
+            return
+        }
+        val tokenStore = io.agents.pokeclaw.cloud.auth.AndroidKeystoreCloudDeviceTokenStore(applicationContext)
+        val client = try {
+            BillingPricingClient(CloudClientFactory.buildLobsterBillingApi(baseUrl, tokenStore))
+        } catch (e: Exception) {
+            XLog.w(TAG, "loadFromCloud: init failed, fall back to SEED", e)
+            return
+        }
+        lifecycleScope.launch {
+            val result = withContext(Dispatchers.IO) {
+                try {
+                    client.listPricing()
+                } catch (e: Exception) {
+                    XLog.e(TAG, "loadFromCloud: network exception, fall back to SEED", e)
+                    null
+                }
+            }
+            when (result) {
+                is BillingPricingClient.Result.OkList -> {
+                    XLog.i(TAG, "loadFromCloud: ok ${result.entries.size} entries")
+                    VendorBillingRegistry.loadFromResp(result.entries)
+                    adapter.replaceAll(VendorBillingRegistry.all())
+                }
+                is BillingPricingClient.Result.Rejected -> {
+                    XLog.w(TAG, "loadFromCloud: rejected=${result.message}, fall back to SEED")
+                    Toast.makeText(
+                        this@VendorBillingActivity,
+                        "价格数据离线，使用本地默认",
+                        Toast.LENGTH_SHORT,
+                    ).show()
+                }
+                null -> {
+                    Toast.makeText(
+                        this@VendorBillingActivity,
+                        "价格数据离线，使用本地默认",
+                        Toast.LENGTH_SHORT,
+                    ).show()
+                }
+            }
+        }
     }
 
     private class VendorAdapter(

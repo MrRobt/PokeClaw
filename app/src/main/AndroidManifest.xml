@@ -110,6 +110,14 @@
             android:exported="false"
             android:screenOrientation="portrait" />
         <activity
+            android:name=".ui.market.SkillMarketActivity"
+            android:exported="false"
+            android:screenOrientation="portrait" />
+        <activity
+            android:name=".ui.employee.AiEmployeeActivity"
+            android:exported="false"
+            android:screenOrientation="portrait" />
+        <activity
             android:name=".ui.web.WebActivity"
             android:exported="false"
             android:screenOrientation="portrait" />

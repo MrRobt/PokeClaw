@@ -468,6 +468,22 @@ class SettingsActivity : BaseActivity() {
             setTrailingText("12 enabled")
         }
 
+        // R5: Skill Market (US-D-039)
+        toolsGroup.addMenuItem(
+            leadingIcon = android.R.drawable.ic_menu_search,
+            title = getString(R.string.settings_skill_market_entry),
+            onClick = { startActivity(Intent(this, io.agents.pokeclaw.ui.market.SkillMarketActivity::class.java)) },
+            showDivider = true
+        )
+
+        // R5: AI Employee Market (US-D-039-EXT)
+        toolsGroup.addMenuItem(
+            leadingIcon = android.R.drawable.ic_menu_send,
+            title = getString(R.string.settings_ai_employee_entry),
+            onClick = { startActivity(Intent(this, io.agents.pokeclaw.ui.employee.AiEmployeeActivity::class.java)) },
+            showDivider = true
+        )
+
         if (BuildConfig.MISSED_CALL_FOLLOWUP_ENABLED) {
             // Missed Call Follow-up (R2 US-B-MISSED-CALL-FOLLOWUP)
             val missedCallItem = toolsGroup.addMenuItem(

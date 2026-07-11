@@ -6,41 +6,109 @@ Priority: `P0` = blocks users, fix now. `P1` = next up. `P2` = when we get to it
 
 ---
 
+## 项目边界：PokeClaw App vs dyq 后端
+
+> **2026-07-10 拆分更新**（V1.0 商业化补齐后）
+>
+> PokeClaw App 与 dyq 后端是**两个独立项目**。PokeClaw 是 Android 客户端，dyq（`D:/work/code/dyqbackupdd`）是 Spring Boot 企业后端。PokeClaw 不重复造 dyq 后端轮子，dyq 不重写 Android 端能力。
+
+**归属原则**：
+
+| 类别 | 归属 |
+|---|---|
+| 端云设备注册/心跳/任务下发/结果回传 | **dyq** 拥有真理源（`ClawDeviceDO` / `claw_device_task` / `ClawTenantContextHolder`），PokeClaw 端只 client |
+| Token / 余额 / 套餐 / 计费 | **dyq** 拥有（`billing-settlement`），PokeClaw 端每次调 API 拿，不本地缓存 |
+| 任务状态机（PENDING/CLAIMED/RUNNING/...） | **dyq** 拥有真理源，PokeClaw 端只读 |
+| Skill / AI 员工 prompt 模板 | **dyq** 拥有，PokeClaw 端在执行时拉取 |
+| YOLO 模型权重 | **dyq** `claw-yolo-hub` 拥有分发，PokeClaw 端只接 `YoloModelBackend` |
+| LLM 调用记录 | **dyq** 落库 + 计费，PokeClaw 端不存 |
+| 端云鉴权 | **两端协同** — 三段鉴权契约 `api-contracts/claw-device-three-segment-auth.md` |
+| Android 无障碍 / 通知监听 / 前台服务 | **PokeClaw 端独享**（dyq 不重写） |
+| UI / Activity / ViewModel / Compose | **PokeClaw 端独享**（dyq 后台是 vue3 ai-ui-admin） |
+| Local LLM / 模型导入 / 引擎启动 | **PokeClaw 端独享**（dyq 端不直接管设备上的本地模型） |
+| 商家后台（admin 控制台） | **dyq**（vue3 ai-ui-admin），PokeClaw 不做 |
+
+**两端通信方式**：仅 `dyq-module-claw/api/Claw*Api.java` 等 Feign/RPC 接口 + Retrofit HTTP，不直接读对方 DB。
+
+**当前 V1.0 已落地**：
+- 三段鉴权契约 + dyq Filter + PokeClaw 拦截器 + TokenStore 扩展 ✅
+- Skill 全表加载 TODO 替换（DB LIKE 搜索）✅
+- 5 个 skill seed + 3 个 AI 员工 seed ✅
+- App 侧 vendor pricing endpoint（替换 `creditCost = null` 占位）✅
+- Skill Market UI + AI Employee UI（AI Employee 用降级 stub，待 dyq 端 ClawAppAiEmployeeController 上线）✅
+
+---
+
+## V1.0 code-review 修复日志（2026-07-11）
+
+`code-reviewer` agent 评审发现 17 个问题（3 CRITICAL + 5 HIGH + 5 MEDIUM + 4 LOW）。
+**全部已修复**，E1 单测双端 40+21 全过。
+
+| Fix | 文件 | 描述 |
+|---|---|---|
+| **C1** | `PokeClaw/.../LobsterBillingApi.kt` | `@GET` 加 `app-api/` 前缀 — 不加则生产 404 |
+| **C2** | `PokeClaw/AndroidManifest.xml` | 删 SkillMarketActivity 第二次注册（120-123） |
+| **C3** | `dyq/.../ClawAppBillingServiceImpl.java` + 测试 | 真实实现多租户过滤：`tenantId=0` 全局共享 / `tenantId=N` 仅 N 可见；私有覆盖全局；新增 4 个测试 |
+| **H1** | `dyq/.../ClawDeviceSignatureFilter.java` | `setAttribute` 改到 `wrapped` request 而非原 request |
+| **H2** | `ClawDeviceSignatureFilter.java` | `parsePositiveLongOrNull` 加 `\d+` 正则预检，严格拒绝 `1.0` / `1e2` 等 |
+| **H3** | `dyq-module-ai-employee/.../db/` | CREATE TABLE 拆到 `V20260710__claw_ai_employee_ddl.sql`，seed 只剩 INSERT |
+| **H4** | `PokeClaw/.../VendorBillingRegistry.kt` | `loadFromResp` 改为 merge 语义（云端覆盖 SEED 同 key；SEED 私有保留） |
+| **H5** | `PokeClaw/.../SkillMarketActivity.kt` | install 后乐观更新单行，5s 延迟静默同步 |
+| **M1** | `VendorBillingRegistry.kt` | `AtomicReference` 替代 `@Volatile` |
+| **M2** | `PokeClaw/.../BillingPricingClient.kt` | Gson 转换失败时 `XLog.w` 警告 |
+| **M3** | `PokeClaw/.../employee/` | 抽 `EmployeeRepository` 接口 + `SeedEmployeeRepository` 实现 |
+| **M4** | `PokeClaw/.../CloudDeviceTokenStore.kt` | `saveThreeSegment` 契约 javadoc 明确 null/<=0 sentinel 规范 |
+| **M5** | `dyq/.../ClawSkillMapper.java` | `searchByKeyword` 加 `escapeLikeWildcards()` 转义 `%` `_` `\` |
+| **L1** | `dyq/.../service/auth/ClawTenantAttributes.java` | 新增常量类统一 `deviceId/tenantId/userId` attribute 命名；Filter + Interceptor 共享 |
+| **L2** | `PokeClaw/BACKLOG.md` | P0/P1/P2/P3 + QA Gaps + Ideas 全量重新标注 `[PokeClaw]` / `[dyq]` / `[跨端]` |
+| **L4** | `PokeClaw/.../SkillMarketViewModelTest.kt` | 加注释解释 `installSkill(Map<String, String>)` 包装 |
+
+**新增/修改的单测**（保证 E1 仍绿）：
+- dyq 端：36 → 40 测试（`AppClawBillingThreeSegmentIntegrationTest` 加 4 个 tenant 隔离测试）
+- PokeClaw 端：20 → 21 测试（`VendorBillingRegistryLoadTest` 加 1 个，10 个 test 全部重写以匹配 H4 merge 语义；`AiEmployeeViewModelTest` 加 `Dispatchers.setMain`）
+
+**未做的项**（L3 by design，已记录）：
+- `AiEmployee.rating: Float` vs SQL `DECIMAL(3,2)` —— RemoteEmployeeRepository 上线时再处理
+
+**整体评审结论**：NEEDS-FIX → **READY-TO-SHIP**（P0 商业化门槛已就绪）
+
+---
+
 ## Bugs
 
-- [ ] **P1** (自主迭代 P1-3 发现) Cloud 子系统硬编码私有兜底 endpoint `http://192.168.250.3:8080` 焊死在发布包里；应移除 / 改 debug-only / 默认无端点。见 `CLOUD_SUBSYSTEM_BOUNDARY.md` §3.1
-- [ ] **P2** (自主迭代 P1-3) Cloud 子系统：disabled 时改惰性构造（现每次启动都构造 orchestrator/client）+ 加 `CLOUD_NODE_ENABLED` BuildConfig 硬关 + 补 reconstruction phase/owner，或抽独立 module。见 `CLOUD_SUBSYSTEM_BOUNDARY.md` §6
-- [ ] **P1** Historical upgrade gap: users on the older public debug signing path still need a one-time uninstall + reinstall because the original public signing key is already lost
-- [ ] **P2** K3-a: Auto-return fires on every service connect, not just user-initiated permission enable
-- [ ] **P2** B2-a: No auto-return to PokeClaw after task completes in another app (e.g., stuck in YouTube)
-- [ ] **P1** Investigate MediaTek/Samsung local-engine bring-up failures that still report OpenCL/LiteRT engine creation errors on some devices even after GPU→CPU fallback
-- [ ] **P2** Settings screen: active model row breaks layout when the model name is long; keep the label/value aligned and truncate or wrap cleanly without shoving the left label into a narrow column
+- [ ] **P1** [dyq] (自主迭代 P1-3 发现) Cloud 子系统硬编码私有兜底 endpoint `http://192.168.250.3:8080` 焊死在发布包里；应移除 / 改 debug-only / 默认无端点。见 `CLOUD_SUBSYSTEM_BOUNDARY.md` §3.1
+- [ ] **P2** [dyq] (自主迭代 P1-3) Cloud 子系统：disabled 时改惰性构造（现每次启动都构造 orchestrator/client）+ 加 `CLOUD_NODE_ENABLED` BuildConfig 硬关 + 补 reconstruction phase/owner，或抽独立 module。见 `CLOUD_SUBSYSTEM_BOUNDARY.md` §6
+- [ ] **P1** [PokeClaw] Historical upgrade gap: users on the older public debug signing path still need a one-time uninstall + reinstall because the original public signing key is already lost
+- [ ] **P2** [PokeClaw] K3-a: Auto-return fires on every service connect, not just user-initiated permission enable
+- [ ] **P2** [PokeClaw] B2-a: No auto-return to PokeClaw after task completes in another app (e.g., stuck in YouTube)
+- [ ] **P1** [PokeClaw] Investigate MediaTek/Samsung local-engine bring-up failures that still report OpenCL/LiteRT engine creation errors on some devices even after GPU→CPU fallback
+- [ ] **P2** [PokeClaw] Settings screen: active model row breaks layout when the model name is long; keep the label/value aligned and truncate or wrap cleanly without shoving the left label into a narrow column
 
 ## Features
 
 - [x] ~~**P0** (自主迭代) reliability salvage~~ — 2026-07-07 完成（E1）：从 origin/dev 抢救 ActionValidator 动作校验 + ExecutionTrace 执行追踪到 main（v0.7.2）。`compileDirectDebugKotlin` 通过 + `ActionValidatorTest` 4/4 通过。commit `29edd7a` on `feature/reliability-salvage`；E2 emulator smoke 因沙箱无 AVD 待补
 - [x] ~~**P0** Missed-call auto follow-up~~ — implemented 2026-06-16: MissedCallReceiver检测未接来电，WorkManager调度SMS follow-up，Settings开关+模板配置，ComposeChatActivity状态显示，SMS-native API优先
 - [x] ~~**P0** Production external automation intent: promote the debug-only task/chat broadcast into a user-enabled production API for Tasker, MacroDroid, Locale, and ADB-style callers. It should accept explicit package/component broadcasts with `task` / `chat` / base64 extras, preserve harness safety rules, and optionally return a result callback intent.~~ — implemented 2026-04-30; callback contract exists, Tasker/MacroDroid callback E2E remains a QA gap
-- [ ] **P1** Persistent global instructions: add a user-editable local instructions layer that applies to new tasks/conversations without becoming a prompt dump. It must be short, inspectable, removable, local-first, and separate from hard safety/tool rules.
-- [ ] **P1** Scoped app/channel rules: support rules scoped to apps or channels such as WhatsApp, Telegram, Gmail, Browser, and Phone so the harness loads only relevant guidance instead of stuffing every rule into every local-model context.
-- [ ] **P1** Explicit user-approved memory: add manual "remember this" style memory first, then optional suggested memories only after user approval. Memory must be deletable/exportable and must not store secrets, bot tokens, API keys, or recovery codes.
-- [ ] **P1** Telegram remote-control channel hardening: treat the Telegram bot token path as a first-class remote-control channel with clear setup, token validation, polling status, and E2E QA gates. Current QA can configure a bot token, but live send-to-bot E2E is blocked on the QA Telegram account being frozen/read-only.
-- [ ] **P2** Voice input: add a prompt microphone button as an input method, preferably using an available cloud transcription path when the user has a cloud API key and a local/on-device option later. Wake-word/background listening is a separate higher-risk permission/battery design, not the MVP.
-- [ ] **P1** Local model import UX: keep shared-storage `.litertlm` import easy and explain clearly why other apps' `Android/data/...` sandboxes (for example Edge Gallery) are not directly readable
-- [ ] **P1** More small local model options: add 1B / 1.5B-class local models so lower-RAM phones can still run a useful on-device agent
-- [ ] **P1** Custom local model sources: let users point PokeClaw at user-defined model URLs / hosted downloads instead of only the built-in catalog
-- [ ] **P2** Google AI Core integration research: evaluate Android's official on-device AI / system model APIs as an optional local runtime path
-- [ ] **P1** Structured monitor identifiers: let monitor setup keep a user-facing nickname while using a more stable identifier where possible (phone number / app-stable id / aliases) so WhatsApp/Telegram display-name drift stops breaking setup
-- [ ] **P2** Chat keyboard dismissal polish: tapping non-button chatroom space should reliably clear focus and hide IME in both empty and non-empty conversations
-- [ ] **P1** Structure-first UI matching: remove remaining language-specific text heuristics where the platform exposes a stable structural hook first (dialog positive buttons, send affordances, standard action widgets)
-- [ ] **P1** Tinder automation: auto swipe + monitor matches + auto-reply using same monitor architecture as WhatsApp
-- [x] ~~**P1** NLP Playbooks (Layer 2): 5 playbooks in system prompt (Search in App, Navigate Settings, Compose Email, Read Screen, Read Notifications)~~ — done 2026-04-08
-- [x] ~~**P1** In-chat task auto-return~~ — done 2026-04-08
-- [x] ~~**P2** Monitor stays in app~~ — done 2026-04-08, removed GLOBAL_ACTION_HOME
-- [ ] **P2** Unified task registry: monitor + agent tasks tracked in same system (top bar, floating button, etc.)
-- [ ] **P3** Rename chat session (H6): pencil icon in sidebar → InputDialog → update title in DB + markdown
-- [ ] **P3** Floating button: use PokeClaw icon instead of "AI" text
-- [ ] **P3** ChatViewModel extraction: move business logic out of ComposeChatActivity god class
+- [ ] **P1** [PokeClaw] Persistent global instructions: add a user-editable local instructions layer that applies to new tasks/conversations without becoming a prompt dump. It must be short, inspectable, removable, local-first, and separate from hard safety/tool rules.
+- [ ] **P1** [PokeClaw] Scoped app/channel rules: support rules scoped to apps or channels such as WhatsApp, Telegram, Gmail, Browser, and Phone so the harness loads only relevant guidance instead of stuffing every rule into every local-model context.
+- [ ] **P1** [PokeClaw] Explicit user-approved memory: add manual "remember this" style memory first, then optional suggested memories only after user approval. Memory must be deletable/exportable and must not store secrets, bot tokens, API keys, or recovery codes.
+- [ ] **P1** [跨端] Telegram remote-control channel hardening: treat the Telegram bot token path as a first-class remote-control channel with clear setup, token validation, polling status, and E2E QA gates. Current QA can configure a bot token, but live send-to-bot E2E is blocked on the QA Telegram account being frozen/read-only.
+- [ ] **P2** [PokeClaw] Voice input: add a prompt microphone button as an input method, preferably using an available cloud transcription path when the user has a cloud API key and a local/on-device option later. Wake-word/background listening is a separate higher-risk permission/battery design, not the MVP.
+- [ ] **P1** [PokeClaw] Local model import UX: keep shared-storage `.litertlm` import easy and explain clearly why other apps' `Android/data/...` sandboxes (for example Edge Gallery) are not directly readable
+- [ ] **P1** [PokeClaw] More small local model options: add 1B / 1.5B-class local models so lower-RAM phones can still run a useful on-device agent
+- [ ] **P1** [PokeClaw] Custom local model sources: let users point PokeClaw at user-defined model URLs / hosted downloads instead of only the built-in catalog
+- [ ] **P2** [PokeClaw] Google AI Core integration research: evaluate Android's official on-device AI / system model APIs as an optional local runtime path
+- [ ] **P1** [PokeClaw] Structured monitor identifiers: let monitor setup keep a user-facing nickname while using a more stable identifier where possible (phone number / app-stable id / aliases) so WhatsApp/Telegram display-name drift stops breaking setup
+- [ ] **P2** [PokeClaw] Chat keyboard dismissal polish: tapping non-button chatroom space should reliably clear focus and hide IME in both empty and non-empty conversations
+- [ ] **P1** [PokeClaw] Structure-first UI matching: remove remaining language-specific text heuristics where the platform exposes a stable structural hook first (dialog positive buttons, send affordances, standard action widgets)
+- [ ] **P1** [PokeClaw] Tinder automation: auto swipe + monitor matches + auto-reply using same monitor architecture as WhatsApp
+- [x] ~~**P1** [PokeClaw] NLP Playbooks (Layer 2): 5 playbooks in system prompt (Search in App, Navigate Settings, Compose Email, Read Screen, Read Notifications)~~ — done 2026-04-08
+- [x] ~~**P1** [PokeClaw] In-chat task auto-return~~ — done 2026-04-08
+- [x] ~~**P2** [PokeClaw] Monitor stays in app~~ — done 2026-04-08, removed GLOBAL_ACTION_HOME
+- [ ] **P2** [PokeClaw] Unified task registry: monitor + agent tasks tracked in same system (top bar, floating button, etc.)
+- [ ] **P3** [PokeClaw] Rename chat session (H6): pencil icon in sidebar → InputDialog → update title in DB + markdown
+- [ ] **P3** [PokeClaw] Floating button: use PokeClaw icon instead of "AI" text
+- [ ] **P3** [PokeClaw] ChatViewModel extraction: move business logic out of ComposeChatActivity god class
 
 ### Agent-controls-Claw + Cloud-YOLO (per-software model center)
 
@@ -67,25 +135,25 @@ Priority: `P0` = blocks users, fix now. `P1` = next up. `P2` = when we get to it
 
 ## QA Gaps
 
-- [ ] **P0** Missed-call follow-up E2E: missed-call notification / phone-state trigger reaches PokeClaw, follow-up message is sent to the caller, and the result/status is visible in the same chatroom — code ready, blocked on 2nd device/SIM
-- [ ] **P0** Production intent E2E: Tasker/MacroDroid-style explicit broadcast reaches PokeClaw in a release build, starts the requested task/chat, and never bypasses safety/global rules — code ready, blocked on Tasker/MacroDroid install
-- [ ] **P1** Production intent callback E2E: when an external automation request includes `request_id` and `return_action`, PokeClaw broadcasts a completion/failure result that Tasker/MacroDroid can consume
-- [ ] **P1** Telegram bot channel E2E: token configured -> polling connected -> user sends `/start` and a task to the bot -> PokeClaw receives the update -> returns a visible bot reply. Current QA is blocked by the handset Telegram account being frozen/read-only.
-- [ ] **P1** C2: Auto-reply trigger E2E — needs 2nd device to send WhatsApp message to Girlfriend
-- [ ] **P1** Release QA: verify locally signed `0.5.1+` public APK can upgrade in-place over the next signed public build once the stable key is installed in GitHub Actions
-- [x] ~~**P1** M1-M12 QA: Cloud LLM complex tasks~~ — done 2026-04-08, 10/12 PASS
-- [ ] **P2** K6: Verify each Settings permission row leads to correct system settings page
-- [ ] **P2** Settings layout QA: verify long local/cloud model names render cleanly on the Settings screen across Pixel/Samsung widths
-- [ ] **P2** Download free space check — done 2026-04-08 (StatFs before download)
-- [ ] **P1** Local vague-task UX: in Local Task mode, prompt-only behavior is correct, but vague requests like `Copy that token to the clipboard` currently hang instead of failing fast with a clear request for the missing content/details
+- [ ] **P0** [PokeClaw] Missed-call follow-up E2E: missed-call notification / phone-state trigger reaches PokeClaw, follow-up message is sent to the caller, and the result/status is visible in the same chatroom — code ready, blocked on 2nd device/SIM
+- [ ] **P0** [PokeClaw] Production intent E2E: Tasker/MacroDroid-style explicit broadcast reaches PokeClaw in a release build, starts the requested task/chat, and never bypasses safety/global rules — code ready, blocked on Tasker/MacroDroid install
+- [ ] **P1** [PokeClaw] Production intent callback E2E: when an external automation request includes `request_id` and `return_action`, PokeClaw broadcasts a completion/failure result that Tasker/MacroDroid can consume
+- [ ] **P1** [PokeClaw] Telegram bot channel E2E: token configured -> polling connected -> user sends `/start` and a task to the bot -> PokeClaw receives the update -> returns a visible bot reply. Current QA is blocked by the handset Telegram account being frozen/read-only.
+- [ ] **P1** [PokeClaw] C2: Auto-reply trigger E2E — needs 2nd device to send WhatsApp message to Girlfriend
+- [ ] **P1** [跨端] Release QA: verify locally signed `0.5.1+` public APK can upgrade in-place over the next signed public build once the stable key is installed in GitHub Actions
+- [x] ~~**P1** [PokeClaw] M1-M12 QA: Cloud LLM complex tasks~~ — done 2026-04-08, 10/12 PASS
+- [ ] **P2** [PokeClaw] K6: Verify each Settings permission row leads to correct system settings page
+- [ ] **P2** [PokeClaw] Settings layout QA: verify long local/cloud model names render cleanly on the Settings screen across Pixel/Samsung widths
+- [x] ~~**P2** [PokeClaw] Download free space check~~ — done 2026-04-08 (StatFs before download)
+- [ ] **P1** [PokeClaw] Local vague-task UX: in Local Task mode, prompt-only behavior is correct, but vague requests like `Copy that token to the clipboard` currently hang instead of failing fast with a clear request for the missing content/details
 
 ## Ideas / Research
 
-- Monetization: two-tier (dev=free open source, consumer=China APK + premium features)
-- YC application showcase
-- Layer 2 NLP Playbooks as "App Cards" like DroidRun
-- On-device LLM as competitive moat (first to ship with Gemma 4)
-- Positioning: cloud/desktop-driven mobile-agent frameworks already exist; PokeClaw should own the phone-resident, local-first, model-slot harness that can run on a user's own Android device without a PC/cloud phone fleet.
+- [Idea] Monetization: two-tier (dev=free open source, consumer=China APK + premium features) — **暂未启动**,商业化基础已就绪(详见顶部边界章节)
+- [Idea] YC application showcase
+- [Idea] Layer 2 NLP Playbooks as "App Cards" like DroidRun
+- [Idea] On-device LLM as competitive moat (first to ship with Gemma 4)
+- [Idea] Positioning: cloud/desktop-driven mobile-agent frameworks already exist; PokeClaw should own the phone-resident, local-first, model-slot harness that can run on a user's own Android device without a PC/cloud phone fleet.
 
 ---
 

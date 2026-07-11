@@ -221,6 +221,13 @@
     <!-- R5: Settings billing section (US-D-031-SETTINGS-BILLING-SECTION) -->
     <string name="settings_billing_group_title">积分与计费</string>
     <string name="settings_billing_vendor_entry">Vendor Billing</string>
+    <string name="settings_skill_market_title">技能市场</string>
+    <string name="settings_skill_market_entry">Skill Market</string>
+    <string name="settings_ai_employee_title">AI 员工市场</string>
+    <string name="settings_ai_employee_entry">AI Employee</string>
+    <string name="skill_market_install_button">安装</string>
+    <string name="skill_market_installed">已安装</string>
+    <string name="skill_market_offline_toast">云端未配置，无法打开技能市场</string>
 
     <!-- R5/R6: Owner task approval dialog (task_approval) -->
     <string name="task_approval_title">Task approval</string>

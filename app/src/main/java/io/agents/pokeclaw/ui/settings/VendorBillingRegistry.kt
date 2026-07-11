@@ -3,22 +3,22 @@
 
 package io.agents.pokeclaw.ui.settings
 
+import io.agents.pokeclaw.cloud.lobster.model.ClawAppBillingPricingRespVO
+import java.util.concurrent.atomic.AtomicReference
+
 /**
  * Hardcoded list of AIGC billing vendors shown in the Settings
  * "积分与计费" section (US-D-031-SETTINGS-BILLING-SECTION).
  *
- * The 4 rows mirror the placeholder seeds the dyq backend ships
- * with in `billing_vendor_pricing_config` (bundle 2026-06-10,
- * A3-10/11/12):
- *  - `cloudphone / * / duration`
- *  - `digital_human / live_virtual_human / duration`
- *  - `digital_human / live_virtual_human / call`
- *  - `cs_ai / * / token`
+ * V1.0 改造（Fix code-review H4 + M1）：
+ *  - 保留 4 行 SEED 作为「云端拉不到时的兜底」+ 测试基线
+ *  - 新增 [loadFromResp] 用 **merge** 语义：云端返回的 entry 按 (vendor, workflow, dimension) 覆盖 SEED 的同 key 行；
+ *    SEED 中没有的 key 也保留（不被清空）；SEED 中有但云端没有的也保留（不被删除）
+ *  - 使用 [AtomicReference] 替代 `@Volatile + 重新赋值` 的 read-modify-write 模式，
+ *    避免 Main 线程与 IO 线程并发更新时的丢失
+ *  - [withRemote] 保留 API，与 [loadFromResp] 合并为同一代码路径
  *
- * All `creditCost` values are intentionally `null` here so the UI
- * falls into the "未配置" state until the cloud wires up the real
- * pricing. The remote fetcher is opt-in via [withRemote] for
- * callers that want to overlay cloud values when available.
+ * 契约：api-contracts/skill-market-api.md §2.1
  */
 object VendorBillingRegistry {
 
@@ -56,31 +56,79 @@ object VendorBillingRegistry {
         ),
     )
 
-    /** All currently-known entries, after applying any remote overlay. */
-    @Volatile
-    private var live: List<VendorBillingEntry> = SEED
+    /**
+     * 当前可见条目（Fix M1：AtomicReference 替代 @Volatile + 不可变列表）。
+     * 每次 [loadFromResp] / [withRemote] 都生成新 List 整体替换，避免 read-modify-write 竞态。
+     */
+    private val liveRef = AtomicReference<List<VendorBillingEntry>>(SEED)
 
     /** Reset to seed values (used in tests). */
     fun resetForTests() {
-        live = SEED
+        liveRef.set(SEED)
     }
 
-    fun all(): List<VendorBillingEntry> = live
+    fun all(): List<VendorBillingEntry> = liveRef.get()
 
     /**
-     * Optional remote overlay. The cloud may return a partial /
+     * Optional remote overlay (legacy API). The cloud may return a partial /
      * sparse list keyed by (vendorCode, workflowType, dimension);
-     * we patch matching rows in [live] in place, leaving unknown
+     * we patch matching rows in [liveRef] in place, leaving unknown
      * seeds untouched so the UI never shrinks.
      */
     fun withRemote(remote: List<VendorBillingEntry>?) {
         if (remote.isNullOrEmpty()) return
-        val byKey = remote.associateBy { keyOf(it) }
-        val merged = live.map { local ->
-            byKey[keyOf(local)] ?: local
-        }
-        live = merged
+        liveRef.updateAndGet { current -> mergeInto(current, remote.map { it.toPair() }) }
     }
+
+    /**
+     * V1.0：从 dyq ClawAppBillingPricingRespVO 列表 merge 到 [liveRef]。
+     *
+     * <p><b>Fix H4：merge 语义，不是 replace。</b>
+     * <ul>
+     *   <li>云端返回的 entry 按 (vendor, workflow, dimension) 覆盖 SEED 同 key 行</li>
+     *   <li>SEED 中没有的 key（云端新增）：追加到末尾</li>
+     *   <li>SEED 中有但云端没的 key（云端删除）：保留，不删</li>
+     *   <li>空响应：no-op（保留当前 liveRef）</li>
+     * </ul>
+     */
+    fun loadFromResp(resp: List<ClawAppBillingPricingRespVO>?) {
+        if (resp.isNullOrEmpty()) return
+        val converted = resp.map { it.toEntry() }
+        liveRef.updateAndGet { current -> mergeInto(current, converted) }
+    }
+
+    /**
+     * Merge 工具：把 [updates] 按 key 合并到 [current]。
+     * - 重复 key：updates 覆盖 current
+     * - 新 key：追加到 current 末尾
+     * - 旧 key（current 独有）：保留
+     *
+     * 返回新 List（不修改入参）。
+     */
+    private fun mergeInto(
+        current: List<VendorBillingEntry>,
+        updates: List<VendorBillingEntry>,
+    ): List<VendorBillingEntry> {
+        if (updates.isEmpty()) return current
+        val byKey = updates.associateBy { keyOf(it) }
+        val merged = LinkedHashMap<String, VendorBillingEntry>(current.size + updates.size)
+        // 先放 current（SEED），被 updates 覆盖
+        for (e in current) {
+            val key = keyOf(e)
+            merged[key] = byKey[key] ?: e
+        }
+        // 再放 updates 中 current 没有的（云端新增）
+        for (e in updates) {
+            val key = keyOf(e)
+            if (key !in merged) {
+                merged[key] = e
+            }
+        }
+        return merged.values.toList()
+    }
+
+    private fun keyOf(e: VendorBillingEntry): String =
+        "${e.vendorCode}|${e.workflowType}|${e.billingDimension}"
 
     /**
      * Look up a single vendor by (vendorCode, workflowType,
@@ -90,14 +138,23 @@ object VendorBillingRegistry {
         vendorCode: String,
         workflowType: String,
         billingDimension: String,
-    ): VendorBillingEntry? = live.firstOrNull {
+    ): VendorBillingEntry? = liveRef.get().firstOrNull {
         it.vendorCode == vendorCode &&
             it.workflowType == workflowType &&
             it.billingDimension == billingDimension
     }
 
-    private fun keyOf(e: VendorBillingEntry): String =
-        "${e.vendorCode}|${e.workflowType}|${e.billingDimension}"
+    /** DTO → domain 转换 */
+    private fun ClawAppBillingPricingRespVO.toEntry(): VendorBillingEntry = VendorBillingEntry(
+        vendorCode = vendorCode,
+        workflowType = workflowType,
+        billingDimension = billingDimension,
+        displayName = displayName ?: "$vendorCode · $workflowType · $billingDimension",
+        creditCost = creditCost,
+    )
+
+    /** DTO → domain 转换（[withRemote] 用） */
+    private fun VendorBillingEntry.toPair(): VendorBillingEntry = this
 
     fun tag(): String = TAG
 }

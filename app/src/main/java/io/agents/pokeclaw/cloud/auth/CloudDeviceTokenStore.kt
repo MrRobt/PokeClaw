@@ -20,6 +20,18 @@ data class CloudDeviceTokenSnapshot(
     val deviceToken: String,
     val refreshToken: String,
     val expiresAtMillis: Long,
+    /**
+     * V1.0 三段鉴权：可选租户 ID。
+     * 头 X-Claw-Tenant-Id 仅当 tenantId != null 且 > 0 时注入。
+     * 默认 null（兼容老设备 / 未登录用户）。
+     */
+    val tenantId: Long? = null,
+    /**
+     * V1.0 三段鉴权：可选用户 ID。
+     * 头 X-Claw-User-Id 仅当 userId != null 且 > 0 时注入。
+     * 默认 null（兼容老设备 / 未登录用户）。
+     */
+    val userId: Long? = null,
 ) {
     fun hasDeviceToken(nowMillis: Long = System.currentTimeMillis()): Boolean =
         deviceToken.isNotBlank() && expiresAtMillis > nowMillis
@@ -41,6 +53,28 @@ fun String.asBearerToken(): String =
 interface CloudDeviceTokenStore {
     fun saveTokens(deviceToken: String, refreshToken: String, expiresInSeconds: Int, nowMillis: Long = System.currentTimeMillis())
     fun updateDeviceToken(deviceToken: String, expiresInSeconds: Int, nowMillis: Long = System.currentTimeMillis())
+
+    /**
+     * V1.0 三段鉴权：保存 tenantId / userId 到本地。
+     *
+     * <p><b>Fix code-review M4：契约规范</b>
+     * <ul>
+     *   <li>{@code tenantId} / {@code userId} 都接受 nullable Long</li>
+     *   <li>约定 sentinel：<b>仅</b> {@code null} 与 {@code <= 0} 视为「未设置」；
+     *       实现禁止用 {@code -1L} / {@code Long.MIN_VALUE} / 其他 sentinel
+     *       （这是 round-trip 安全的前提）</li>
+     *   <li>不加密写入（设备 ID 才是敏感数据，tenant/user 编号不是）</li>
+     *   <li>生产实现：[AndroidKeystoreCloudDeviceTokenStore]（持久化到 SharedPreferences）</li>
+     *   <li>默认实现 no-op（兼容老 InMemoryTokenStore 测试 fake）</li>
+     * </ul>
+     *
+     * <p>读出侧约定：[CloudDeviceTokenSnapshot.tenantId] / [.userId] 在
+     * 存储值为 null 或 &lt;=0 时返回 null（透明转换）。
+     */
+    fun saveThreeSegment(tenantId: Long?, userId: Long?) {
+        // 默认 no-op；生产实现见 AndroidKeystoreCloudDeviceTokenStore
+    }
+
     fun snapshot(): CloudDeviceTokenSnapshot?
     fun clear()
     /**
@@ -85,14 +119,28 @@ class AndroidKeystoreCloudDeviceTokenStore(
         XLog.i(TAG, "updateDeviceToken: device token refreshed, expiresAt=$expiresAt")
     }
 
+    override fun saveThreeSegment(tenantId: Long?, userId: Long?) {
+        // 三段鉴权的 tenantId / userId 不属于敏感数据（设备 ID 才是），
+        // 共享 prefs 直接存明文 Long；null 时写 0L 表示「缺省」。
+        prefs.edit()
+            .putLong(KEY_TENANT_ID, tenantId ?: 0L)
+            .putLong(KEY_USER_ID, userId ?: 0L)
+            .apply()
+        XLog.i(TAG, "saveThreeSegment: tenantId=$tenantId userId=$userId")
+    }
+
     override fun snapshot(): CloudDeviceTokenSnapshot? {
         val encryptedDeviceToken = prefs.getString(KEY_DEVICE_TOKEN, null) ?: return null
         val encryptedRefreshToken = prefs.getString(KEY_REFRESH_TOKEN, null) ?: return null
         return try {
+            val storedTenant = prefs.getLong(KEY_TENANT_ID, 0L)
+            val storedUser = prefs.getLong(KEY_USER_ID, 0L)
             CloudDeviceTokenSnapshot(
                 deviceToken = decrypt(encryptedDeviceToken),
                 refreshToken = decrypt(encryptedRefreshToken),
                 expiresAtMillis = prefs.getLong(KEY_EXPIRES_AT, 0L),
+                tenantId = if (storedTenant > 0) storedTenant else null,
+                userId = if (storedUser > 0) storedUser else null,
             )
         } catch (e: Exception) {
             XLog.e(TAG, "snapshot: failed to decrypt cloud device token, clearing invalid storage", e)
@@ -106,6 +154,8 @@ class AndroidKeystoreCloudDeviceTokenStore(
             .remove(KEY_DEVICE_TOKEN)
             .remove(KEY_REFRESH_TOKEN)
             .remove(KEY_EXPIRES_AT)
+            .remove(KEY_TENANT_ID)
+            .remove(KEY_USER_ID)
             .apply()
         XLog.i(TAG, "clear: cloud device tokens cleared")
     }
@@ -115,6 +165,8 @@ class AndroidKeystoreCloudDeviceTokenStore(
             .remove(KEY_DEVICE_TOKEN)
             .remove(KEY_REFRESH_TOKEN)
             .remove(KEY_EXPIRES_AT)
+            .remove(KEY_TENANT_ID)
+            .remove(KEY_USER_ID)
             .apply()
         XLog.w(TAG, "invalidate: cloud device tokens FORCE-INVALIDATED — caller must re-register")
     }
@@ -163,6 +215,8 @@ class AndroidKeystoreCloudDeviceTokenStore(
         private const val KEY_DEVICE_TOKEN = "device_token_encrypted"
         private const val KEY_REFRESH_TOKEN = "refresh_token_encrypted"
         private const val KEY_EXPIRES_AT = "expires_at_millis"
+        private const val KEY_TENANT_ID = "three_segment_tenant_id"
+        private const val KEY_USER_ID = "three_segment_user_id"
         private const val KEY_ALIAS = "pokeclaw_cloud_device_token_aes"
         private const val ANDROID_KEY_STORE = "AndroidKeyStore"
         private const val TRANSFORMATION = "AES/GCM/NoPadding"
