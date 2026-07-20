@@ -4,6 +4,8 @@
 package io.agents.pokeclaw.cloud
 
 import android.content.Context
+import io.agents.pokeclaw.agent.safety.BatteryGuard
+import io.agents.pokeclaw.agent.safety.BatteryStatus
 import io.agents.pokeclaw.cloud.auth.CloudDeviceTokenStore
 import io.agents.pokeclaw.cloud.model.DeviceHeartbeatRequest
 import io.agents.pokeclaw.cloud.model.DeviceRegisterRequest
@@ -291,7 +293,23 @@ class CloudNodeOrchestrator(
 
         XLog.i(TAG, "executeCloudTask: 开始执行 taskUuid=${task.taskUuid}, command=${task.command}")
 
-        val result: CloudTaskExecutionResult = try {
+        // T49 电量前置守卫：低电量且未充电时直接拒绝执行并上报 LOW_BATTERY，避免任务中途掉电导致更难恢复。
+        // readBatteryInfo() 返回可空 Pair；读不到时按 fail-safe 视为电量充足，避免误伤正常任务。
+        val battery = deviceInfo.readBatteryInfo()
+        val batteryDecision = BatteryGuard.evaluate(
+            BatteryStatus(percent = battery.first ?: 100, isCharging = battery.second ?: true),
+        )
+        if (!batteryDecision.allowed) {
+            XLog.w(TAG, "executeCloudTask: 电量守卫拦截 taskUuid=${task.taskUuid}, ${batteryDecision.reason}")
+        }
+
+        val result: CloudTaskExecutionResult = if (!batteryDecision.allowed) {
+            CloudTaskExecutionResult.failure(
+                message = "设备电量不足，已拒绝执行：${batteryDecision.reason}",
+                errorCode = CloudTaskErrorCode.LOW_BATTERY,
+                retryable = true,
+            )
+        } else try {
             withContext(Dispatchers.IO) {
                 taskExecutor.execute(task)
             }
@@ -478,6 +496,34 @@ class CloudNodeOrchestrator(
                 detail = "任务执行超时",
                 recoverable = true,
                 suggestedAction = "简化任务或增加超时时间后重试",
+            )
+            CloudTaskErrorCode.AUTH_REQUIRED -> ErrorDetail(
+                category = "AUTH_REQUIRED",
+                code = "AUTH_REQUIRED",
+                detail = result.message.take(500).ifBlank { "账号未登录或登录态失效，需要人工完成登录/验证" },
+                recoverable = false,
+                suggestedAction = "请人工完成登录验证",
+            )
+            CloudTaskErrorCode.RISK_CONTROL -> ErrorDetail(
+                category = "RISK_CONTROL",
+                code = "RISK_CONTROL",
+                detail = result.message.take(500).ifBlank { "触发平台风控（验证码/安全验证/滑块），已暂停执行" },
+                recoverable = false,
+                suggestedAction = "请人工完成登录验证",
+            )
+            CloudTaskErrorCode.LOW_BATTERY -> ErrorDetail(
+                category = "LOW_BATTERY",
+                code = "LOW_BATTERY",
+                detail = result.message.take(500).ifBlank { "设备电量低于安全阈值，已拒绝执行任务" },
+                recoverable = true,
+                suggestedAction = "请为设备充电至安全电量后重试",
+            )
+            CloudTaskErrorCode.STORAGE_FULL -> ErrorDetail(
+                category = "STORAGE_FULL",
+                code = "STORAGE_FULL",
+                detail = result.message.take(500).ifBlank { "端侧存储空间不足，无法完成任务" },
+                recoverable = true,
+                suggestedAction = "请清理设备存储后重试",
             )
             else -> ErrorDetail(
                 category = "UNKNOWN",

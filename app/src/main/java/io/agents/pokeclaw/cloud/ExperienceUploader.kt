@@ -85,7 +85,7 @@ class ExperienceUploader(
     }
 
     private fun send(payload: JSONObject, type: String, callback: (Boolean, String?) -> Unit) {
-        val url = "$baseUrl/api/claw-device/experience"
+        val url = "$baseUrl/device-api/claw-device/experience"
         val body = payload.toString().toRequestBody(JSON_MEDIA)
         val requestBuilder = Request.Builder().url(url).post(body)
         getToken()?.let { token ->

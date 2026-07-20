@@ -34,6 +34,14 @@ enum class CloudTaskErrorCode {
     TASK_REJECTED,
     TOOL_FAILED,
     EXECUTION_TIMEOUT,
+    // 需要人工完成登录/账号验证（登录态过期、未登录、二次验证等）。
+    AUTH_REQUIRED,
+    // 平台风控拦截（验证码、安全验证、滑块、频控封禁等），需暂停并人工介入。
+    RISK_CONTROL,
+    // 设备电量低于安全阈值，任务派发前置拒绝执行。
+    LOW_BATTERY,
+    // 端侧存储空间不足，无法下载 APK / 写入证据。
+    STORAGE_FULL,
     UNKNOWN,
 }
 

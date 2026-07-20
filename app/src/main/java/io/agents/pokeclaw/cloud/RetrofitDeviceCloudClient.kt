@@ -76,10 +76,10 @@ class RetrofitDeviceCloudClient(
         private const val TAG = "PokeClaw/RetrofitDeviceCloudClient"
 
         /** 与后端约定的 submitTaskResult 路径（含前导 "/"）。 */
-        private const val SUBMIT_RESULT_PATH_FORMAT = "/api/claw-device/tasks/%s/result"
+        private const val SUBMIT_RESULT_PATH_FORMAT = "/device-api/claw-device/tasks/%s/result"
 
         /** 与后端约定的 cancelTask 路径（含前导 "/"）。 */
-        private const val CANCEL_TASK_PATH_FORMAT = "/api/claw-device/tasks/%s/cancel"
+        private const val CANCEL_TASK_PATH_FORMAT = "/device-api/claw-device/tasks/%s/cancel"
 
         /**
          * 工厂方法：从 baseUrl + tokenStore + offlineQueue 构造完整客户端。

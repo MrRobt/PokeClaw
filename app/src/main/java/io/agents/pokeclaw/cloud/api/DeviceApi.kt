@@ -1,6 +1,6 @@
 package io.agents.pokeclaw.cloud.api
 
-import io.agents.pokeclaw.cloud.model.*
+import io.agents.pokeclaw.cloud.model.* // paths unified to /device-api/** per contract
 import retrofit2.Response
 import retrofit2.http.*
 
@@ -18,7 +18,7 @@ interface DeviceApi {
      * POST /api/claw-device/register
      * 无需认证，首次启动时调用
      */
-    @POST("/api/claw-device/register")
+    @POST("/device-api/claw-device/register")
     suspend fun registerDevice(
         @Body request: DeviceRegisterRequest
     ): Response<DeviceRegister200Response>
@@ -28,7 +28,7 @@ interface DeviceApi {
      * POST /api/claw-device/heartbeat
      * 需要 deviceToken 认证
      */
-    @POST("/api/claw-device/heartbeat")
+    @POST("/device-api/claw-device/heartbeat")
     suspend fun sendHeartbeat(
         @Body request: DeviceHeartbeatRequest
     ): Response<DeviceHeartbeat200Response>
@@ -38,7 +38,7 @@ interface DeviceApi {
      * GET /api/claw-device/devices/{deviceId}/pending-tasks
      * 需要 deviceToken 认证
      */
-    @GET("/api/claw-device/devices/{deviceId}/pending-tasks")
+    @GET("/device-api/claw-device/devices/{deviceId}/pending-tasks")
     suspend fun getPendingTasks(
         @Path("deviceId") deviceId: String
     ): Response<GetPendingTasks200Response>
@@ -50,7 +50,7 @@ interface DeviceApi {
      * v1.1.0：除 JWT Bearer 外强制要求 HMAC 签名。
      * 签名算法见 cloud.auth.HmacSigner.signSubmitResult。
      */
-    @POST("/api/claw-device/tasks/{taskUuid}/result")
+    @POST("/device-api/claw-device/tasks/{taskUuid}/result")
     suspend fun submitTaskResult(
         @Path("taskUuid") taskUuid: String,
         @Header("X-Claw-Timestamp") timestampMillis: Long,
@@ -64,7 +64,7 @@ interface DeviceApi {
      * POST /api/claw-device/token/refresh
      * 无需认证，使用 refreshToken
      */
-    @POST("/api/claw-device/token/refresh")
+    @POST("/device-api/claw-device/token/refresh")
     suspend fun refreshToken(
         @Body request: TokenRefreshRequest
     ): Response<RefreshDeviceToken200Response>
@@ -74,7 +74,7 @@ interface DeviceApi {
      * GET /api/claw-device/tasks/{taskUuid}
      * 需要 deviceToken 认证
      */
-    @GET("/api/claw-device/tasks/{taskUuid}")
+    @GET("/device-api/claw-device/tasks/{taskUuid}")
     suspend fun getTaskByUuid(
         @Path("taskUuid") taskUuid: String
     ): Response<GetTaskByUuidResponse>
@@ -87,7 +87,7 @@ interface DeviceApi {
      * v1.1.0：与 submitTaskResult 同样要求 HMAC 签名。
      * 响应 data 为 true=取消成功；false=任务不存在或已是终态。
      */
-    @POST("/api/claw-device/tasks/{taskUuid}/cancel")
+    @POST("/device-api/claw-device/tasks/{taskUuid}/cancel")
     suspend fun cancelTask(
         @Path("taskUuid") taskUuid: String,
         @Header("X-Claw-Timestamp") timestampMillis: Long,
