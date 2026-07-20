@@ -1,0 +1,445 @@
+# Goal: PokeClaw v0.7.2 打包 → 装到本地 Android 模拟器 → 联调 dyq 端云任务全链路
+
+## 1. 背景
+
+PokeClaw v0.7.2 (Android 客户端) 与 dyq (Spring Boot 后端) 已分别在 dev 分支上完成 V1.0 商业化 P0+P1 改造：
+
+- PokeClaw: `D:\work\code\PokeClaw` dev 分支 HEAD `ecdefbe`
+- dyq: `D:\work\code\dyqbackupdd` dev 分支 HEAD `51e7f748c`
+
+本次目标：**本地 Android 模拟器**（不是无印云手机）上跑通 PokeClaw 构建 → 装到模拟器 → 联调测试环境 dyq 后台 → 端云任务全链路验证。
+
+## 2. 前置条件
+
+### 2.1 路径与代码
+| 项 | 值 |
+|---|---|
+| PokeClaw 工作区 | `D:\work\code\PokeClaw`（当前分支 `dev`，HEAD `ecdefbe`）|
+| dyq 工作区 | `D:\work\code\dyqbackupdd`（当前分支 `dev`，HEAD `51e7f748c`）|
+| Android SDK（推荐） | `C:\Users\zlg02\AppData\Local\Android\Sdk` 或 `D:\android-sdk`（任一已安装即可）|
+| ADB | `$ANDROID_HOME\platform-tools\adb.exe` |
+
+### 2.2 本地 Android 模拟器（AVD）
+| 项 | 推荐配置 |
+|---|---|
+| 设备名 | `Pixel_8_Pro_API_35`（或任意 ≥ API 30 设备）|
+| 系统镜像 | `system-images;android-35;google_apis;x86_64` |
+| RAM | 4096 MB |
+| 分辨率 | 1080×2400（与真机一致，避免布局错位）|
+| 是否需要硬件加速 | **是，必须 KVM 启用**。Windows 用户：在 **BIOS 开启 Intel VT-x / AMD-V**，并**关闭 Hyper-V**（Hyper-V 会抢占 KVM）。验证：`adb shell getprop ro.hardware` 返回 `ranchu`/`goldfish` 且能正常启动 = OK |
+| ADB 连接 | 启动后自动 `127.0.0.1:5554`（emulator-5554） |
+
+**重要 — 沙箱限制自检**：
+```bash
+adb devices
+# 必须看到 emulator-5554  device 状态
+# 如果 WSL2 报 "no permission" → chmod 666 /dev/kvm
+# 如果完全无 KVM → 见 §7「失败处理」切换到备选路径
+```
+
+### 2.3 dyq 后台管理系统（测试环境）
+| 项 | 值 |
+|---|---|
+| 域名 | `https://saastest.muse.yun` |
+| 租户名称 | `yisheng` |
+| 账号 | `admin` |
+| 密码 | `ZIBsXPIaZPiPjZH` |
+| App-side API 路径前缀 | `/app-api/claw/...` |
+| 设备端 API 路径前缀 | `/api/claw-device/...` |
+
+### 2.4 谷歌账号（用于 Gmail / Play 商店 / 真实登录类任务）—— ⚠️ **登录是 P0 硬性前置**
+
+```
+邮箱：kyuble1vxodpv@plo.chaoniua.org
+密码：jiwngi5kvtwf1
+```
+
+> ⚠️ **登录是 P0 硬性前置**：没有可用账号，后续 T7-T22 内容型任务（评论/点赞/发布/养号/批量发布）**全部无法执行**。**必须**先在模拟器上把 Google 账号 + 至少一个测试平台账号（抖音 / TikTok）登录成功，再开始 Phase 6 联调。
+
+⚠️ 一次性 disposable 账号。Google 对自动化登录有风控，可能需人工过验证/二次确认。**仅在跑 Gmail/Play 任务时使用**；纯 Chrome/搜索/UI 任务不需要。
+
+**Phase 4.5（新增）：登录验证前置**
+- T7 准备：先在模拟器手动登录 Google 账号（验证 disposable 可用）
+- T8 准备：再至少登录 1 个测试平台（抖音 / TikTok / 小红书 / 微博任选）作为后续 T16/T18/T23 内容任务的执行账号
+- 如果登录被风控/触发二次验证：**PokeClaw 会通过 `ExperienceUploader.uploadFailure` 上报**（`errorCategory` 现归 `TOOL` / `UNKNOWN`，**本 goal 强制要补一个 `RISK_CONTROL` / `AUTH_REQUIRED` 子类**），写入 `claw_experience` 表，`recoveryHint` 字段填"请人工完成登录验证"——**这一上报链路必须能联调跑通**（见 §6.9 T27）
+
+### 2.5 Cloud LLM（agent loop 用）
+```
+baseUrl = https://api.deepseek.com/v1
+model   = deepseek-chat   （V3，function calling；勿用 deepseek-reasoner）
+```
+API key 在 `D:\work\code\PokeClaw\TEST_CREDENTIALS.local.md`（gitignored），环境变量 `DEEPSEEK_API_KEY` 注入；或在 PokeClaw 的 LLM Config UI 粘贴。
+
+## 3. 执行步骤
+
+### Phase 1: 启动本地 Android 模拟器
+
+**方式 A：Android Studio AVD Manager**
+1. 打开 Android Studio → More Actions → Virtual Device Manager
+2. 创建/启动 `Pixel_8_Pro_API_35`（首次启动需先下载 system image）
+3. 等系统完全启动到桌面（看到"Hello"或 Launcher）
+
+**方式 B：命令行（无 Studio）**
+```bash
+# 列出现有 AVD
+$ANDROID_HOME/emulator/emulator.exe -list-avds
+# 启动 headless（适合 CI / 沙箱）
+$ANDROID_HOME/emulator/emulator.exe -avd Pixel_8_Pro_API_35 -no-window -no-audio &
+sleep 60   # 等系统完全启动
+adb wait-for-device   # 阻塞直到设备就绪
+adb shell getprop sys.boot_completed   # → 1 表示启动完成
+```
+
+验证：开屏看到 Android Launcher + 状态栏显示电量即可。
+
+### Phase 2: 构建 PokeClaw Debug APK
+```bash
+cd D:\work\code\PokeClaw
+.\gradlew.bat :app:assembleDirectDebug
+dir app\build\outputs\apk\direct\debug\
+# 应输出 PokeClaw_*.apk (~122MB)
+```
+
+### Phase 3: 装到模拟器
+```bash
+adb -s emulator-5554 install -r -g app\build\outputs\apk\direct\debug\PokeClaw_*.apk
+# 后台跑（大文件传输 ~5-15min）
+```
+
+验证：`adb -s emulator-5554 shell pm list packages | grep io.agents.pokeclaw` → 应出现
+
+### Phase 4: 配 PokeClaw
+1. 启动 PokeClaw（桌面找到图标）：`adb -s emulator-5554 shell am start -n io.agents.pokeclaw/.ui.splash.SplashActivity`
+2. 首次启动会自动弹权限请求：点「允许」
+3. 授权无障碍：
+   - Settings → 权限 → 无障碍 → PokeClaw → 启用
+   - Settings → 权限 → 通知监听 → PokeClaw → 启用
+4. 配 DeepSeek：
+   - PokeClaw → Settings → LLM Config → OpenAI-compatible / Custom
+   - baseUrl: `https://api.deepseek.com/v1`
+   - model: `deepseek-chat`
+   - API key: 从 `TEST_CREDENTIALS.local.md` 复制
+5. 启 External Automation（关键步骤！否则 dyq 端无法下发任务）：
+   - PokeClaw → Settings → Remote Control → External Automation → Enable
+
+### Phase 5: 设备注册到测试环境 dyq
+1. 注入测试环境 baseUrl 到 PokeClaw：
+   ```bash
+   adb -s emulator-5554 shell run-as io.agents.pokeclaw sh -c \
+     "echo 'cloud_base_url=https://saastest.muse.yun' > /data/data/io.agents.pokeclaw/shared_prefs/cloud_url_override.xml"
+   # 或更简单：直接修改 KVUtils（需重新打包）或在 Settings UI 找 cloud_base_url 输入
+   ```
+   推荐方式：在 PokeClaw → Settings → 高级 → 找「Cloud Base URL」项填入（如果 UI 没有，需要手动改源码加设置项，参考 `SettingsActivity.kt` 的 KVUtils.getCloudBaseUrl 调用方）
+2. 触发设备注册：重启 PokeClaw 或等 `cloud_enabled=true` 自动注册
+3. 验证：登录 `https://saastest.muse.yun`（admin/ZIBsXPIaZPiPjZH）→ 设备管理 → 应看到模拟器设备记录（设备名 `emulator-5554` 类似）
+
+### Phase 4.5.1: 数据准备（P0 阻断 - 不做 T7-T26 全跑不动）
+
+> 养号 / 批量发布 / 装 App / 内容互动 等任务**严重依赖** dyq 后台种子数据。**所有 case 跑通前必须先把这些数据准备好**。
+
+| # | 数据项 | dyq 端位置 | 准备方式 | 验证 |
+|---|---|---|---|---|
+| D1 | 至少 5 个测试抖音账号 | `claw_social_account` 表 | admin 后台「社交账号」手工录入（手机号 + cookie + UA + device_id 绑定）| SQL 查 `select count(*) from claw_social_account where tenant_id=1 and platform_id=1` ≥ 5 |
+| D2 | 至少 3 个测试 TikTok 账号 | 同 D1，platform_id=2 | 同上 | `platform_id=2` ≥ 3 |
+| D3 | 1 个账号组 (accountGroup) | `claw_account_group` + `claw_account_group_member` 表 | admin 后台「账号组管理」→ 新建组 → 批量加 D1+D2 账号 | SQL 查 member count ≥ 8 |
+| D4 | 1 个设备分组 (deviceGroup) | `claw_device_group` 表 | admin 后台「设备分组」→ 新建 → 把模拟器设备加入 | `claw_device_group_member.device_id=模拟器 device_id` 行存在 |
+| D5 | 5 个示范 skill (V1.0 商业化 seed) | `claw_skill` 表 | 跑 `V20260710__claw_skill_seed.sql` Flyway migration | SQL 查 `where name in ('search_youtube', 'read_notifications', 'reply_message', 'monitor_contact', 'batch_apps_cleanup')` ≥ 5 |
+| D6 | 3 个示范 AI 员工 (V1.0 商业化 seed) | `ai_employee` 表 | 跑 `V20260710__claw_ai_employee_ddl.sql` + `_seed.sql` | SQL 查 `where employee_code in ('emp_cs_assistant', 'emp_social', 'emp_ecom')` ≥ 3 |
+| D7 | 至少 3 个应用市场条目 | `cloudphone_app_market` 表 | admin 后台「应用市场」→ 新增抖音/快手/小红书 app 记录 | SQL 查 ≥ 3 |
+| D8 | 至少 2 个测试视频素材 | `cloudphone_material` + 本地 OSS | admin 后台「素材库」→ 上传 mp4 | 列表显示 2 个可用素材 |
+| D9 | vendor billing 定价 (T22 用) | `billing_vendor_pricing_config` 表 | SQL 插 4 行 (cloudphone/digital_human/digital_human/cs_ai)，同 `VendorBillingRegistry.SEED` | SQL 查 ≥ 4 |
+| D10 | 第二租户 `tenant_test_2` (供 §6.12 多租户测试) | `sys_tenant` 表 | admin 后台「租户管理」→ 新建租户 + 配 1 个 admin 账号 | 后台能登录 `tenant_test_2` 控制台 |
+
+**Phase 4.5.1 验证脚本**（一次性跑通才算数据准备好）：
+```bash
+# 在 dyq 测试环境
+mysql -h 192.168.250.3 -u root -p dyq_dev < scripts/verify-v10-data-ready.sql
+# 期望：10 行查询全部 count(*) >= 阈值
+```
+
+### Phase 6: 端云任务联调（覆盖 dyq cloudphone 全量 15 个 executor + 12 个 controller）
+
+> ⚠️ 完整覆盖 dyq 真实支持的 26 类任务。**所有 case 跑通后**写一行到 `D:\work\code\dyqbackupdd\dyq-module-claw\dyq-module-claw-biz\.planning\2026-07-11-audit.md`。
+
+#### 6.1 基础端云（P0 必须先过）
+
+| # | 任务 | dyq 端点 / executor | 触发方式 | 期望 |
+|---|---|---|---|---|
+| T1 | 设备注册 + 心跳 | `POST /api/claw-device/register` + `POST /api/claw-device/heartbeat` | 启动 PokeClaw 自动 | 设备入 `claw_device` 表，30s 一跳 |
+| T2 | 拉取任务 | `GET /api/claw-device/agent/tasks/poll` | 自动 | 200 + 空 list（无任务时）|
+| T3 | 基础云任务下发 | `LocalAgentTaskExecutor` | `adb shell am broadcast -a io.agents.pokeclaw.DEBUG_TASK --es task "how much battery left"` | 设备拉到任务 + `get_device_info` + 回传 SUCCESS |
+| T4 | 端云 HMAC 签名 | `ClawDeviceSignatureFilter` | 同 T3（自动签名） | `POST /api/claw-device/tasks/{uuid}/result` 200，坏签名 401001 |
+| T5 | 跨设备经验上报 | `POST /api/claw-device/experience` | T3/T6 完成后 | 200，`claw_experience` 表新增 sourceDeviceId 行 |
+| T6 | 真实 LLM 任务 | MiniMax agent loop | `am broadcast --es task "open chrome and search for bitcoin price"` | 8 轮内完成 + 屏幕显示 "Bitcoin" + 回传 SUCCESS |
+
+#### 6.2 设备管理（5 个 executor）
+
+| # | 任务 | dyq executor | 触发 | 期望 |
+|---|---|---|---|---|
+| T7 | Google 登录 | `GoogleLoginTaskExecutor` | dyq 下发任务 + 用 `kyuble1vxodpv@plo.chaoniua.org` | 模拟器 Google 账号登录成功，Home 显示已登录 |
+| T8 | 普通登录 | `LoginTaskExecutor` | dyq 下发 | 测试账号登录抖音/TikTok 等 |
+| T9 | 登出账号 | `LogoutAccountTaskExecutor` | dyq 下发 | 账号登出 + cookies 清理 |
+| T10 | 改资料 | `ProfileModifyTaskExecutor` | dyq 下发 | 抖音主页简介/性别修改成功 |
+| T11 | 改头像 | `PhotoModifyTaskExecutor` | dyq 下发 + 准备测试图片 | 头像替换为指定图 |
+| T12 | 改昵称 | `NameModifyTaskExecutor` | dyq 下发 | 昵称更新到指定字符串 |
+
+#### 6.3 App 操作（3 个 executor + 2 个 controller）
+
+| # | 任务 | dyq 端点 / executor | 触发 | 期望 |
+|---|---|---|---|---|
+| T13 | 装 App | `AppInstallTaskExecutor` → `POST /cloudphone/app-install-task/install` | dyq 后台选 Play 商店某 app + 选账号组 | app 安装成功 + 桌面出现图标 |
+| T14 | 下载 APK | `AppDownloadTaskExecutor` → `POST /cloudphone/download-task/create` | dyq 后台填 APK URL | APK 落到模拟器 `/sdcard/Download/` |
+| T15 | 批量装 | `POST /cloudphone/batch-task/create` | dyq 后台选账号组 + 多个 app | 一次装多个 app，账号组内每台都装上 |
+
+#### 6.4 内容发布（2 个 controller + 1 个 executor）
+
+| # | 任务 | dyq 端点 / executor | 触发 | 期望 |
+|---|---|---|---|---|
+| T16 | 单条发布视频 | `PublishTaskExecutor` → `POST /cloudphone/publish-task/create` | dyq 后台选素材 + 选账号 | 抖音/TikTok 发布一条视频 + 视频 URL 写回 task |
+| T17 | 批量发布 | `BatchPublishTaskExecutor` → `POST /cloudphone/batch-publish-task/create` | dyq 后台选账号组 + 视频素材 | 多账号矩阵批量发，每账号一条 |
+| T17b | 批量发布（从素材库） | `POST /cloudphone/batch-publish-task/create-from-materials` | dyq 后台选素材库 ID | 自动从素材库抓视频 + 批量发 |
+| T17c | 批量发布（重试失败） | `POST /cloudphone/batch-publish-task/retry` | 上一步有失败账号 | 只重试失败的 sub-task |
+
+#### 6.5 内容互动（5 个 executor）
+
+| # | 任务 | dyq executor | 触发 | 期望 |
+|---|---|---|---|---|
+| T18 | 评论视频 | `CommentTaskExecutor` | dyq 下发 + 选目标视频 | 在指定视频下评论 + 截图证据 |
+| T19 | 点赞 + 关注账号 | `LikeAccountTaskExecutor` | dyq 下发 | 关注目标账号 + 点赞其最近 3 条 |
+| T20 | 收藏视频 | `FavoriteTaskExecutor` | dyq 下发 | 视频收藏成功 |
+| T21 | 评论置顶 | `CommentPinTaskExecutor` | dyq 下发 + 选自己评论 | 自己评论被置顶 |
+| T22 | 转发视频 | `ForwardTaskExecutor` | dyq 下发 | 视频转发到指定账号 |
+
+#### 6.6 养号（核心商业场景，1 个 controller + 1 个 executor）
+
+| # | 任务 | dyq 端点 / executor | 触发 | 期望 |
+|---|---|---|---|---|
+| T23 | 养号任务下发 | `POST /cloudphone/nurture-task/create`（`CloudphoneNurtureTaskController`） | dyq 后台配养号策略：浏览 / 点赞 / 评论 / 关注 混合 + 时长 | `claw_nurture_*` 表新增执行记录 + 模拟器轨迹证据 |
+| T23b | 养号统计查询 | `GET /cloudphone/nurture-task/stats` | 养号跑完后查 | 返回 `CloudphoneNurtureStatsRespDTO`（时长/动作/账号数）|
+| T23c | 养号任务分页 | `GET /cloudphone/nurture-task/page` | dyq 后台列表 | 按租户 + 时间分页 |
+
+#### 6.7 循环任务 + 模板 + 工作流（4 个 controller）
+
+| # | 任务 | dyq 端点 | 触发 | 期望 |
+|---|---|---|---|---|
+| T24 | 循环任务 | `POST /cloudphone/recurring-task/create` | dyq 后台配 cron | 按 cron 触发（小时级验证：等 1 小时）|
+| T25 | 任务模板 | `POST /cloudphone/task-template/create` | dyq 后台 | 创建可复用模板，T16 引用模板 |
+| T26 | 任务工作流 | `POST /cloudphone/task-workflow/create` | dyq 后台串联「T13 装 App → T16 发视频」 | 一次下发，2 步顺序执行 |
+
+#### 6.8 任务查询 + 日志（不在执行清单，作为观察手段）
+
+| # | 工具 | dyq 端点 |
+|---|---|---|
+| 观察 | AI 任务查询日志 | `GET /cloudphone/ai-task-query-log/page` |
+| 观察 | 任务执行日志 | `GET /cloudphone/task-step-log/page` |
+| 观察 | 任务命令日志 | `GET /cloudphone/task-command-log/page` |
+| 观察 | AI 任务绑定 | `GET /cloudphone/ai-task-binding/page` |
+| 观察 | 任务上传 | `POST /cloudphone/upload-task`（素材上传） |
+
+#### 6.9 登录前置 + 风控 / 上报联调（⚠️ 阻断 T7-T26，**必须先过**）
+
+> 现有 `ExperienceUploader.uploadFailure` 上报链路（`app/src/main/java/io/agents/pokeclaw/cloud/ExperienceUploader.kt`）会把失败任务上报 `POST /api/claw-device/experience`，落 `claw_experience` 表。本组 case **强制验证**这条链路在登录失败 / 风控触发时是否真的工作。**发现的问题必须修到可工作**，不能放过。
+
+| # | 任务 | 触发 | 期望 | 不通过时必做的事 |
+|---|---|---|---|---|
+| T27a | **Google 登录失败上报** | 故意用错密码（如 `wrongpass123`）触发 `GoogleLoginTaskExecutor` | 模拟器 `ExperienceUploader` 调 `POST /api/claw-device/experience`，body 含 `type=failure` / `errorCategory` / `errorCode=AUTH_REQUIRED` / `recoveryHint`；`claw_experience` 新行 | 1. 改 `CloudNodeOrchestrator.buildErrorDetail` 加 `CloudTaskErrorCode.AUTH_REQUIRED` 分支 2. `errorCategory` 新增 `RISK_CONTROL` 3. `suggestedAction` 填"请人工完成登录验证" 4. `ExperienceUploader.uploadFailure` 走通 |
+| T27b | **验证码 / 二次验证检测** | 故意登录被风控后让 PokeClaw 走 agent loop | `recoveryHint` 含"captcha" / "verification" 关键字 | 同上 + 1. 端侧加 `isCaptchaScreen(screen)` 工具 2. 风控检测后立即停止 agent loop + 上报 |
+| T27c | **suggestedAction 字段透传** | 让一次失败任务走完链路 | dyq 端 `AppClawDeviceTaskResultReqVO` 收到 `suggestedAction` 字段 + 写入 DB | 端云 `needsEscalation` 字段契约对齐（参考 `BACKLOG.md` P2 "(H3 协议对齐)"）|
+| T27d | **上报失败不阻塞主流程** | 让 dyq `/api/claw-device/experience` 返回 500 | PokeClaw `ExperienceUploader` 不抛异常，主任务仍正常 `result` 上报 | 1. `ExperienceUploader.send` 已 try-catch，确认 2. `CloudNodeOrchestrator` 失败上报 try-catch 隔离 |
+| T27e | **上报队列积压** | 在断网情况下连发 10 个失败任务 | `CloudEventQueue` 累积 → 联网后批量 flush | 检查 `CloudEventQueue` 是否真有 offline 队列（vs in-memory）|
+| T28a | **抖音 / TikTok 登录前置** | Phase 4.5 准备：用 1 个测试账号 | 模拟器登录态保留 ≥ 30min | 1. 验证码出现时人工介入 2. 登录成功后立即 `uploadSuccess` 上报 |
+| T28b | **登录态过期检测** | 改系统时间让 session token 失效 | `LoginTaskExecutor` 检测到 token 过期 → 上报 `errorCategory=AUTH_REQUIRED` + 触发 re-login 流程 | 1. 端侧加 session 校验工具 2. 失败上报 + 自动 re-login |
+| T29a | **PokeClaw 端到端：登录 → 评论 → 失败上报** | 完整跑：登录抖音 → dyq 下发评论任务 → 评论失败（评论框被风控挡住）| `claw_experience` 表出现 `type=failure, errorCategory=RISK_CONTROL` 行 | 必须修到：风控检测 + 上报 + 不卡死 |
+| T29b | **PokeClaw 端到端：登录 → 养号 → 触发风控** | T23 养号任务跑 10 分钟，故意高频操作触发抖音风控 | `claw_nurture_*` 任务记录存在 + `claw_experience` 新增 `RISK_CONTROL` 行 | 必须修到：养号策略能感知风控 → 上报 → 自动暂停 |
+| T30a | **静默修复：增加 RISK_CONTROL 错误码** | T27/T29 暴露上报分类不足 | `CloudNodeOrchestrator.buildErrorDetail` 新增 `CloudTaskErrorCode.RISK_CONTROL` + `ErrorDetail(category="RISK_CONTROL", code="RISK_CONTROL", suggestedAction=...)` | **必做**：如现有枚举无此值，扩 `CloudTaskErrorCode`；触发 `tool_result.json` 显示新错误码；写单元测试 |
+| T30b | **静默修复：登录态监测** | T28b 暴露没有 session 过期检测 | 端侧加 `LoginSessionMonitor` 工具 + LoginTaskExecutor 集成 | **必做**：新工具 + 单测 + 集成测试 |
+| T30c | **静默修复：验证码/风控屏幕识别** | T27b 暴露 | 新增 `RiskControlDetector` 工具类，识别抖音/小红书/微博的验证弹窗 | **必做**：新工具 + 单测；至少覆盖 3 个平台的弹窗特征 |
+
+#### 6.10 PokeClaw 端能力回归（P1 必测 — 端是产品不只是执行者）
+
+> PokeClaw 自身是产品，V1.0 加了不少端能力，§6.1-6.9 只测了"云任务下发链路"。本组 case 测端侧自身能力。
+
+| # | 能力 | 触发 | 期望 |
+|---|---|---|---|
+| T31 | **Skill 市场** | PokeClaw → Settings → Skill Market | 看到 5 个 V1.0 seed skill；点 Install 一个 → SkillRegistry 大小 0→1 |
+| T32 | **Skill 远程下发** | dyq 下发 `install_skill:{"id":"remote_test","steps":[...]}` | 模拟器 SkillRegistry 收到 + UI 列表显示 |
+| T33 | **AI 员工市场** | PokeClaw → Settings → AI Employee | 看到 3 个 V1.0 seed employee；点 Hire → toast「即将上线」（降级 stub）|
+| T34 | **多 LLM 切换** | Settings → LLM Config 切 OpenAI / Anthropic / DeepSeek / MiniMax / Custom | 每次切保存 + 重启后保留 |
+| T35 | **External Automation 广播** | `adb shell am broadcast -a io.agents.pokeclaw.RUN_TASK --es task "how much battery left"` | 设备拉起任务 + 跑通 + 回传 SUCCESS |
+| T36 | **三段鉴权 header 注入** | 抓包看请求是否带 `X-Claw-Tenant-Id` / `X-Claw-User-Id` | 头存在（仅当已登录时）|
+| T37 | **HMAC 端到端** | T36 抓包看 `X-Claw-Signature` 是否对 | 服务端 401001 拦截坏签名；正常 200 |
+| T38 | **Missed-call 跟单** | 通过 emulator 模拟来电 + 看 chatroom | 设置开关时显示 SMS 跟单 card（功能可选测）|
+| T39 | **首次启动引导** | 干净数据重装 PokeClaw | SplashActivity → 主界面；权限请求齐全；无 ANR |
+
+#### 6.11 三级降级链 + 跨设备自进化（P1 必测 - QA H3/H4/H5 重测）
+
+> QA_CHECKLIST H3 修了「**云端 Hermes 接手**」、H4「**端云链路 E3 真后端**」、H5「**跨设备自进化**」，这是 V1.0 核心容灾能力。
+
+| # | 场景 | 触发 | 期望 | 不通过必做 |
+|---|---|---|---|---|
+| T40a | **设备拉取任务失败 → 升级 cloud-agent** | 把 dyq 端 `/api/claw-device/agent/tasks/poll` 故意 500 | PokeClaw 上报 `errorCategory=NETWORK` + 自动重试 3 次 + 仍失败后**触发降级到 cloud-agent**（`ClawCloudAgentTaskMessage` 入队） | 端 `LocalAgentTaskExecutor.dispatchToCloud()` 触发 + dyq `ClawCloudAgentTaskConsumer` 消费 + 写入 `claw_task.executorType=cloud_agent` |
+| T40b | **cloud-agent 失败 → 人工接管告警** | 让 Hermes 命令调用故意失败 | 上报 `errorCategory=UNKNOWN` + 写入 `claw_task_takeover_message` + 触发人工接管告警（邮件/Slack）| `ClawTaskTakeoverConsumer` 触发；如未集成告警通道，**必做**：加邮件 webhook |
+| T40c | **设备掉线 → 任务重派** | 模拟器关 5 分钟 → 重新启动 | 重新连上后 dyq 端把 in-flight 任务重新派发 | 端 `ClawDeviceOfflineJobRevert` + `pending-tasks` 拉取路径 |
+| T41 | **跨设备经验上报** | T6 真实 LLM 任务完成后 | `claw_experience` 表新增 `sourceDeviceId=模拟器 device_id` 行，含 `summary` + `strategyKeywords` | 检查 `ExperienceUploader.uploadSuccess` 走通；`CloudNodeOrchestrator.reportExperience` 调用点 |
+| T42 | **失败经验上报** | 故意让 T3 失败（断网）| `claw_experience` 新增 `type=failure` 行 + `errorCategory` / `errorCode` / `recoveryHint` 字段非空 | 同 T41 检查 `uploadFailure` 路径 |
+| T43 | **多设备经验汇聚** | 跑 T41 + T42 在两台设备（#1 模拟器 + 真实云手机）| dyq 后台「经验列表」看到 2 条不同 `sourceDeviceId` | 端设备 ID 上报一致；后端不按 device 过滤 |
+
+#### 6.12 多租户隔离（P1 必测 - dyq 是 SaaS 不测租户等于没测商业化）
+
+> dyq 是 Spring Boot 多租户 SaaS（`sys_tenant` 表 + `claw_*.tenant_id` 列）。**只用 yisheng 测等于没测多租户**。
+
+| # | 场景 | 触发 | 期望 | 不通过必做 |
+|---|---|---|---|---|
+| T44a | **跨租户任务不可见** | 用 `tenant_test_2` 账号登录 dyq 后台 | 在「任务管理」搜 yisheng 的 task uuid | 搜不到（HTTP 200 但 list 空） | `ClawTaskServiceImpl.getTaskPage` 加 `tenant_id` 强制过滤（看是否漏加 `@TenantIgnore` 误用）|
+| T44b | **跨租户设备不可见** | `tenant_test_2` 查「设备管理」 | 看不到 yisheng 模拟器设备 | 查不到 | `ClawDeviceServiceImpl` 加 `tenant_id` 过滤 |
+| T44c | **跨租户定价不可见** | T44c 测 `ClawAppBillingController.listPricing` 切 `tenant_test_2` token | 看不到 yisheng 私有 vendor pricing | 只看到 tenant_test_2 自己的 | §6.9 C3 修复已实现 tenant 过滤；本 case 验证之 |
+| T44d | **跨租户经验不可见** | `tenant_test_2` 查 `claw_experience` | 看不到 yisheng 设备的 `sourceDeviceId` 行 | 查不到 | 检查 `ClawExperienceServiceImpl` 加 `tenant_id` 过滤 |
+| T44e | **跨租户 app-market / 素材库** | 同上 | 看不到 yisheng 私有 app-market 条目 | 查不到 | `CloudphoneAppMarketServiceImpl` 加 tenant 过滤 |
+| T44f | **跨租户 API 401 拦截** | 用 `tenant_test_2` token 调 `/api/claw-device/heartbeat` (模拟 yisheng deviceId) | HTTP 401 + 错误码 401007（**需新加**）| **必做**：在 `ClawDeviceSignatureFilter` 加 tenant-id vs device.tenant_id 校验 |
+| T44g | **admin 跨租户切换** | 用 admin 账号切到 `tenant_test_2` 控制台 | UI 顶部租户切换下拉，切换后只看到 `tenant_test_2` 自己的数据 | 检查 admin 切换 UI 是否实现 |
+
+#### 6.13 性能 / 长稳基线（P2 - release gate 必过）
+
+> 没有性能基线，release 决策无依据。
+
+| # | 场景 | 触发 | 期望基线 | 监控 |
+|---|---|---|---|---|
+| T45 | **单设备串行吞吐** | 1 台设备连发 50 个 `get_device_info` 任务 | 平均 ≤ 5s/task；P95 ≤ 10s | adb logcat 时间戳 + dyq 后台 `task_step_log` |
+| T46 | **多设备并发** | 10 台设备同时拉任务（可临时注册 10 个 deviceId 模拟） | dyq 后台不卡；任务不重复派发 | dyq 端 CPU / 内存 + RabbitMQ 队列深度 |
+| T47 | **长稳 1h 养号** | 1 台设备跑 1h 养号（每 5min 一次浏览+点赞+评论） | 内存增长 ≤ 50MB；任务成功率 ≥ 90% | `adb shell dumpsys meminfo io.agents.pokeclaw` 每 10min |
+| T48 | **网络抖动** | 任务跑中途 `adb shell svc wifi disable` 30s | 任务 retry 3 次后失败上报 `NETWORK_UNAVAILABLE`；联网后下一任务正常 | logcat + 任务状态 |
+| T49 | **电量阈值** | 模拟器电量设 10% | 任务派发前检查电量；< 15% 拒绝执行 + 上报 `LOW_BATTERY` | **必做**：端加 `BatteryGuard` 工具类 + `executeCloudTask` 前置 check |
+
+#### 6.14 异常 / 边界 / 回归（P2 - 升级必过）
+
+| # | 场景 | 触发 | 期望 | 不通过必做 |
+|---|---|---|---|---|
+| T50a | **设备进程被杀 → 重启保活** | `adb shell am force-stop io.agents.pokeclaw` | ForegroundService + JobScheduler 拉起 | 检查 `ForegroundService.kt` + `KeepAliveJobService.kt` |
+| T50b | **存储满 → APK 下载失败** | `adb shell df /data` 100% 占用 | 任务上报 `errorCategory=STORAGE_FULL` + 静默 retry | 端 `LocalAgentTaskExecutor` 加 storage check |
+| T50c | **重复派发同 task 幂等** | dyq 端同时发 2 次同 taskUuid | 端只执行 1 次；第 2 次收到 200 + skip 标记 | `ClawTaskExecutor` 加 `taskUuid` 缓存去重 |
+| T50d | **stale task 清理** | 设备掉线 30min → 恢复 | dyq 端 stale 任务标记 FAILED + retryable=false | 端 `ClawDeviceOfflineJobRevert` 触发 |
+| T51 | **回归：v0.7.0 旧功能** | Reliability / E1 自动化 / Missed-call / 通知监听 | 全部仍工作 | 跑全部回归套件；QA_CHECKLIST §6.14 节 |
+
+**Phase 6 调试技巧**：
+
+```bash
+# 看 PokeClaw 日志
+adb -s emulator-5554 logcat -v time -s ClawTaskExecutor,CloudNodeOrchestrator,LocalAgentTaskExecutor
+
+# 看 dyq 后台是否收到任务
+# 登录 saastest.muse.yun → 任务管理 → 看 task 状态
+
+# 截图证据
+adb -s emulator-5554 exec-out screencap -p > Screenshots/2026-07-11-t3.png
+
+# 模拟器轨迹
+adb -s emulator-5554 logcat -d | grep -E "TaskExecutor|养号|nurture" > audit-2026-07-11.log
+```
+
+**Phase 6 的调试技巧**：
+```bash
+# 看 PokeClaw 日志
+adb -s emulator-5554 logcat -v time -s ClawTaskExecutor,CloudNodeOrchestrator,LocalAgentTaskExecutor
+
+# 看 dyq 后台是否收到任务
+# 登录 saastest.muse.yun → 任务管理 → 看 task 状态
+
+# 截图证据
+adb -s emulator-5554 exec-out screencap -p > Screenshots/2026-07-11-t3.png
+```
+
+### Phase 7: dyq 后台验证
+登录 `https://saastest.muse.yun` → 导航：
+- 设备管理：模拟器设备状态 = ONLINE，心跳时间 < 60s
+- 任务列表：T3/T5/T6 任务状态 = COMPLETED
+- 经验列表：T5 的 `claw_experience` 行存在
+- 审计日志：4 次 HMAC 验签都 PASS
+
+## 4. 验收标准
+
+| 等级 | 标准 |
+|---|---|
+| **E0 登录前置** | Phase 4.5 完成：Google 账号 + ≥1 测试平台账号在模拟器登录成功并保持 session |
+| **E0 数据准备** | Phase 4.5.1 D1-D10 全部完成（SQL 查 count(*) ≥ 阈值）|
+| **E1 单测** | `mvn -pl dyq-module-claw-biz test` + `gradlew :app:testDirectDebugUnitTest` 全绿（前置必须）|
+| **E2 模拟器（基础）** | Phase 5 设备注册 + Phase 6.1 T1-T6 全部 PASS |
+| **E2 模拟器（设备管理）** | Phase 6.2 T7-T12 至少 4/6 PASS（Google 登录/抖音登录可能因风控跳过，**但必须跑完 §6.9 T27/T28 验证跳过原因已被上报到 `claw_experience`**）|
+| **E2 模拟器（App 操作）** | Phase 6.3 T13-T15 全部 PASS |
+| **E2 模拟器（内容发布）** | Phase 6.4 T16 + T17 至少 1 个 PASS（抖音/TikTok 真实账号可能需人工过验证）|
+| **E2 模拟器（内容互动）** | Phase 6.5 T18-T22 至少 3/5 PASS |
+| **E2 模拟器（风控上报）** | Phase 6.9 T27-T28 全部 PASS（**关键**）+ T30a/b/c 修复后单测绿 |
+| **E2 模拟器（端能力回归）** | Phase 6.10 T31-T39 至少 7/9 PASS |
+| **E2 模拟器（降级链 + 自进化）** | Phase 6.11 T40-T43 全部 PASS |
+| **E2 模拟器（多租户隔离）** | Phase 6.12 T44 全部 PASS（**关键** — 不通过则商业化不达标） |
+| **E2 模拟器（性能基线）** | Phase 6.13 T45-T49 全部满足基线（task ≤ 5s/P95 ≤ 10s / 内存增长 ≤ 50MB /h） |
+| **E2 模拟器（异常 / 回归）** | Phase 6.14 T50-T51 全部 PASS |
+| **E3 真机级（养号）** | Phase 6.6 T23 完整跑 1 次养号任务 + stats 查询返回 |
+| **E3 真机级（循环）** | Phase 6.7 T24 至少等 1 个 cron 周期 PASS |
+| **E3 真机级（端到端）** | Phase 6.9 T29a/T29b 完整跑通：登录 → 内容/养号 → 触发风控 → 上报成功 → 静默修复点全闭环 |
+| **完成标志** | 1 份 `audit.md` + 截图 ≥ 50 张 + 设备 ID 入 `claw_device` + 至少 10 行 `claw_experience`（含 ≥2 条 `RISK_CONTROL`）+ 至少 3 个 `claw_nurture_*` 任务记录 + 跨租户 0 数据泄漏 + **所有 §6.9/§6.10/§6.11/§6.12/§6.13 修复点已 commit 并单测绿** + **CI 全绿**（见 §8）|
+
+## 5. 风险与回滚
+
+- ⚠️ **无 KVM 沙箱**：当前 WSL2 工作站无 `/dev/kvm`，emulator 起不来。**必须切到有 KVM 的宿主**（BIOS 开启 VT-x + 关 Hyper-V）；否则降级到执行 T1-T4 后停。
+- ⚠️ **APK 传输超时**：模拟器安装 `adb install` 通常 30-60s，但首次冷启动 + `-g` 自动授权可能 5min。**用 1800s 超时**。
+- ⚠️ **Google 风控**：disposable 账号跑 Gmail/Play 任务可能被风控，**首次需人工过验证**。
+- ⚠️ **凭证管理**：本 Goal 含 Google 账号 + dyq admin 密码 + DeepSeek key。**发布公开 fork 前必须净化历史**。
+- ⚠️ **任务超时兜底**：240s agent loop 兜底是 BACKLOG P2 已知 bug；T6 短任务不会触发。
+
+## 6. 交付物
+
+- `D:\work\code\PokeClaw\app\build\outputs\apk\direct\debug\PokeClaw_*.apk`
+- `D:\work\code\dyqbackupdd\dyq-module-claw\dyq-module-claw-biz\.planning\2026-07-11-audit.md`（任务流水 + 截图引用）
+- `D:\work\code\PokeClaw\Screenshots\2026-07-11-*.png`（设备运行 / 任务结果 / 后台 4 页）
+- 设备 ID（注册后写入 `claw_device` 表的 device_id 字符串）
+- `D:\work\code\dyqbackupdd\dyq-module-claw\dyq-module-claw-biz\.planning\2026-07-11-claw-device-e3.log`（adb logcat + 端云 RPC 全日志）
+
+## 7. 失败处理 / 备选路径
+
+| 现象 | 优先排查 | 备选路径 / **必做修复** |
+|---|---|---|
+| 模拟器无法启动 | BIOS VT-x 是否开 / Hyper-V 是否关 | 用 Android Studio Cloud 远程 AVD（在线）|
+| 启动后无 ADB | `adb kill-server && adb start-server` | 重启 AVD |
+| `adb install` 超时 | 用 1800s 超时；后台跑 | 改用 `adb push` + `pm install` 分步 |
+| 设备注册失败 (HTTP 非 200) | 检查 `cloud_base_url` + `cloud_enabled=true` + Bearer token | 直接调 `POST https://saastest.muse.yun/api/claw-device/register` 看后端日志 |
+| HMAC 验签 401001 | 检查设备时钟（`adb shell date`）+ 5min 漂移窗口 | dyq 端加大时间窗（不推荐） |
+| agent loop 超时无终态 | 已知 P2 240s 兜底；改用更短任务 | 关 `LocalAgentTaskExecutor` 走直接工具 |
+| Google 登录风控 | 切 disposable 账号 | 改用 #1 无印 Galaxy（DNS 正常，已装 Chrome）— 切回云手机路径 |
+| dyq 后台看不到任务 | 检查任务有没有进 `claw_task` 表 | 直接看 dyq 端 RabbitMQ 管理后台 |
+| **登录失败但没上报** | T27a 失败：检查 `ExperienceUploader.uploadFailure` 是否真被调 | **必做修复**：在 `LocalAgentTaskExecutor` / `GoogleLoginTaskExecutor` 失败路径里显式 `experienceUploader.uploadFailure(...)`；新增 `RISK_CONTROL` 枚举值 + `ErrorDetail` 分支 |
+| **风控触发但 agent loop 不停** | T27b 失败：检查 `RiskControlDetector` 是否存在 | **必做修复**：新增 `RiskControlDetector` 工具类（检测"验证码"/"安全验证"/"拖动滑块"等关键字 + 弹窗特征），命中立即 `onError` 退出 loop |
+| **suggestedAction 没透传到 dyq** | T27c 失败：检查 `AppClawDeviceTaskResultReqVO` 字段 | **必做修复**：在 `BACKLOG.md` P2 "H3 协议对齐" 落地 — `needsEscalation` + `suggestedAction` 字段 |
+| **上报失败抛异常阻塞主流程** | T27d 失败：检查 try-catch 范围 | **必做修复**：`ExperienceUploader.send` 已 try-catch（验过），`CloudNodeOrchestrator.reportExperience` 也要 try-catch |
+| **session 过期没检测** | T28b 失败 | **必做修复**：新增 `LoginSessionMonitor`，LoginTaskExecutor 集成前调 |
+| **dyq 后台看到任务但 `claw_experience` 没新增** | 检查 dyq 端 `POST /api/claw-device/experience` 端点是否注册 | 看 `AppClawDeviceController.java` 是否有 `@PostMapping("/experience")` |
+
+## 8. CI / Release Gate（P3 - release 必过）
+
+> 没有 CI 自动化，goal 全靠手动跑 → release gate 形同虚设。**必须**进 GitHub Actions。
+
+| # | 项 | 触发 | 期望 | 备注 |
+|---|---|---|---|---|
+| C1 | **PokeClaw JVM 单测** | GitHub Actions push | `./gradlew :app:testDirectDebugUnitTest` 绿 | 已有 GH workflow `.github/workflows/build.yml` |
+| C2 | **dyq 端 maven 单测** | GitHub Actions push | `mvn -pl dyq-module-claw-biz -am test` 绿 | dyq 项目需补 GH workflow |
+| C3 | **商业化 readiness audit** | 每次 release tag | `python scripts/commercial_readiness_audit.py --skip-network` 绿 | 现有 `scripts/commercial_readiness_audit.py` |
+| C4 | **联调测试目标** | 每周 cron + 每次 release | 跑完整 Phase 6 + §6.10-§6.14，生成 Allure 报告到 GitHub Pages | 新建 GH workflow `.github/workflows/goal-e2e.yml` |
+| C5 | **gate 标签** | release tag push | C1+C2+C3 全绿 + 4 个 E2 等级 + 4 个 E3 等级**全部**通过 + 修复点全 commit | tag 触发 `release.yml` 时自动 check |
+| C6 | **可视化报告** | 跑完 goal 后 | `audit.md` + `screenshots/` + `dyq 端 task_step_log` 导出成 `report-2026-07-XX.html` | 推到 GitHub Pages（参考 `docs/closed-loop-maturity.html` 模板）|
+
+**Release Gate Hard 规则**（任何一项不达标 → 阻止 release tag）：
+1. C1 + C2 + C3 100% 绿
+2. §4 验收标准的 9 个 E2 等级 + 4 个 E3 等级**全部 PASS**（P0 阻断 0 项）
+3. §6.9/§6.10/§6.11/§6.12/§6.13 暴露的所有"必做修复"项**已 commit + 单测绿**
+4. 跨租户数据隔离 0 泄漏（§6.12 T44）
+5. §6.13 性能基线全部达标
+
+## 9. 执行人 / 排期
+
+- **执行人**：AI 助手 / 工程师本人
+- **目标完成时间**：
+  - Phase 1-5 + §6.1 T1-T6（基础端云）：单 session **~30-60min**
+  - §6.2-§6.8 + §6.10-§6.11（设备/内容/养号/PokeClaw 端/降级链）：~4-8h
+  - §6.9（风控/上报）+ §6.12（多租户）+ §6.13（性能）+ §6.14（异常）：~4-8h
+  - §8（CI / Release Gate）：~2-4h
+  - **总计 1-3 个工作日**（含调试 + 修复 + 重测）
+- **复盘**：跑完后写 `2026-07-11-audit.md`，把每个 T 的执行时间 / 失败点 / 解决方式都记录

@@ -83,8 +83,8 @@ android {
 
     buildTypes {
         getByName("debug") {
-            isDebuggable = false
-            isMinifyEnabled = true
+            isDebuggable = true
+            isMinifyEnabled = false
             isShrinkResources = false
             buildConfigField("Boolean", "DEBUG_AUTOMATION_ENABLED", "true")
             buildConfigField("Boolean", "UPDATE_CHECK_ENABLED", "false")
